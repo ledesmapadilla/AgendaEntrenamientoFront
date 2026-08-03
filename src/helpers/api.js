@@ -3,6 +3,6 @@ export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/ap
 
 export const API = {
   base: API_URL,
-  visitas: `${API_URL}/visitas`,
-  tractores: `${API_URL}/tractores`,
+  entrenamientos: `${API_URL}/entrenamientos`,
+  visitas: `${API_URL}/entrenamientos`,
 };
