@@ -125,50 +125,20 @@ function Visitas() {
     setError(false);
   };
 
-  const grupoRequiereCC = (grupoNombre) => {
-    if (!grupoNombre || grupoNombre === "Otro" || grupoNombre === "Repuestos B." || grupoNombre === "Repuestos SP." || grupoNombre === "NINGUNO") {
-      return false;
-    }
-    const gNum = getGruppoNumFromLabel(grupoNombre);
-    const tractoresDelGrupo = tractores.filter(
-      (t) => gNum === null || (t.gruppo ?? 6) === gNum
-    );
-    return tractoresDelGrupo.length > 0;
-  };
-
-  const handleCancelarCC = () => {
-    if (!form.cc) {
-      setForm((f) => ({ ...f, grupo: "", otroGrupo: "", cc: "" }));
-    }
-    setCcModalOpen(false);
-  };
-
   const handleGrupoChange = (e) => {
     const grupoSel = e.target.value;
     setForm((f) => ({ ...f, grupo: grupoSel, otroGrupo: "", cc: "" }));
     setError(false);
-
-    if (grupoSel === "Repuestos B." || grupoSel === "Repuestos SP." || grupoSel === "Otro") {
-      return;
-    }
-
-    if (grupoSel) {
-      const gNum = getGruppoNumFromLabel(grupoSel);
-      const tractoresDelGrupo = tractores.filter(
-        (t) => gNum === null || (t.gruppo ?? 6) === gNum
-      );
-      if (tractoresDelGrupo.length > 0) {
-        setCcSeleccionadosTemp([]);
-        setCcModalOpen(true);
-      }
-    }
   };
 
   const agregarVisita = async () => {
-    if (!form.grupo) { setError(true); return; }
+    if (!form.grupo) {
+      setError(true);
+      return;
+    }
 
     let grupoFinal = form.grupo;
-    if (form.grupo === "Otro") {
+    if (form.grupo === "Otra") {
       if (!form.otroGrupo.trim()) {
         setError(true);
         return;
@@ -176,31 +146,29 @@ function Visitas() {
       grupoFinal = form.otroGrupo.trim();
     }
 
-    if (grupoRequiereCC(form.grupo) && !form.cc) {
-      setError(true);
-      Swal.fire({
-        icon: "warning",
-        title: "Centro de Costo requerido",
-        text: "Debes seleccionar al menos un Centro de Costo (CC) para registrar la visita de este grupo.",
-      });
-      return;
-    }
-
     const key = toKey(año, mes, diaModal);
     try {
       const res = await fetch(URL_VISITAS, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fecha: key, grupo: grupoFinal, cc: form.cc, observaciones: form.observaciones }),
+        body: JSON.stringify({
+          fecha: key,
+          grupo: grupoFinal,
+          cc: form.cc || "",
+          observaciones: form.observaciones || ""
+        }),
       });
-      if (!res.ok) throw new Error();
+
+      if (!res.ok) throw new Error("Error en respuesta del servidor");
       const nueva = await res.json();
+
       setVisitas((prev) => ({ ...prev, [key]: [...(prev[key] ?? []), nueva] }));
       setForm(formVacio);
       setError(false);
       setDiaModal(null);
       Swal.fire({ icon: "success", title: "Entrenamiento registrado", timer: 1500, showConfirmButton: false });
-    } catch {
+    } catch (err) {
+      console.error("Error al guardar:", err);
       setError(true);
       Swal.fire({ icon: "error", title: "Error", text: "No se pudo guardar el entrenamiento" });
     }
