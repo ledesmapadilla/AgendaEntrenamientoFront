@@ -1,0 +1,1272 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Container, Button, Modal, Form } from "react-bootstrap";
+import Swal from "sweetalert2";
+import ExcelJS from "exceljs";
+import { isMobile } from "../../utils/device";
+import { API } from "../../helpers/api";
+
+const URL_VISITAS = API.visitas;
+
+const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie"];
+const MESES_NOMBRE = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+const COLOR = "#3a7070";
+
+const GRUPOS = [
+  { label: "Grupo 1",       color: "#4a6fa5" },
+  { label: "Grupo 2",       color: "#52735a" },
+  { label: "Grupo 3",       color: "#9e8850" },
+  { label: "Grupo 4",       color: "#6b5b7b" },
+  { label: "Grupo 5",       color: "#7a5038" },
+  { label: "NINGUNO",       color: "#777777" },
+  { label: "Berdina",       color: "#7a3535" },
+  { label: "San Pablo",     color: "#5a6f40" },
+  { label: "Repuestos B.",  color: "#8e44ad" },
+  { label: "Repuestos SP.", color: "#d35400" },
+  { label: "Otro",          color: "#6c757d" },
+];
+
+const ITINERARIO = [
+  { dia: "Día 1", manana: "Visita a Campo", tarde: "Visita San Pablo" },
+  { dia: "Día 2", manana: "Visita a Campo", tarde: "Repuestos San Pablo" },
+  { dia: "Día 3", manana: "Visita a Campo", tarde: "Visita a Campo" },
+  { dia: "Día 4", manana: "Visita Berdina", tarde: "Repuestos Berdina" },
+  { dia: "Día 5", manana: "Visita a Campo", tarde: "Resumen semanal" }
+];
+
+function colorGrupo(label) {
+  const l = (label || "").trim();
+  if (l === "Repuestos Berdina" || l === "Repuestos B.") return "#8e44ad";
+  if (l === "Repuestos San Pablo" || l === "Repuestos SP.") return "#d35400";
+  return GRUPOS.find((g) => g.label === l)?.color ?? "#6c757d";
+}
+
+function celdasMes(año, mes) {
+  const totalDias = new Date(año, mes + 1, 0).getDate();
+  const arr = [];
+  let offsetSet = false;
+  for (let d = 1; d <= totalDias; d++) {
+    const dow = new Date(año, mes, d).getDay();
+    if (dow === 0 || dow === 6) continue;
+    if (!offsetSet) {
+      for (let i = 0; i < dow - 1; i++) arr.push(null);
+      offsetSet = true;
+    }
+    arr.push(d);
+  }
+  return arr;
+}
+
+function toKey(año, mes, dia) {
+  return `${año}-${String(mes + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+const formVacio = { grupo: "", otroGrupo: "", cc: "", observaciones: "" };
+
+function getGruppoNumFromLabel(grupoLabel) {
+  if (grupoLabel === "Grupo 1") return 1;
+  if (grupoLabel === "Grupo 2") return 2;
+  if (grupoLabel === "Grupo 3") return 3;
+  if (grupoLabel === "Grupo 4") return 4;
+  if (grupoLabel === "Grupo 5") return 5;
+  if (grupoLabel === "Berdina" || grupoLabel === "Repuestos B.") return 6;
+  if (grupoLabel === "San Pablo" || grupoLabel === "Repuestos SP.") return 7;
+  return null;
+}
+
+function Visitas() {
+  const navigate = useNavigate();
+  const hoy = new Date();
+
+  const [año, setAño]       = useState(2026);
+  const [mes, setMes]       = useState(6); // Julio
+  const [visitas, setVisitas] = useState({});
+  const [diaModal, setDiaModal] = useState(null);
+  const [form, setForm]     = useState(formVacio);
+  const [error, setError]   = useState(false);
+  const [tractores, setTractores] = useState([]);
+  const [mostrarItinerario, setMostrarItinerario] = useState(false);
+  const [mostrarResumen, setMostrarResumen] = useState(false);
+  const [tabResumen, setTabResumen] = useState("grupos");
+  const [ccModalOpen, setCcModalOpen] = useState(false);
+  const [ccSeleccionadosTemp, setCcSeleccionadosTemp] = useState([]);
+
+  const retroceder = () => {
+    if (año === 2026 && mes === 4) return;
+    if (mes === 0) { setMes(11); setAño((a) => a - 1); }
+    else setMes((m) => m - 1);
+  };
+
+  const avanzar = () => {
+    if (mes === 11) { setMes(0); setAño((a) => a + 1); }
+    else setMes((m) => m + 1);
+  };
+
+  const cargar = async () => {
+    try {
+      const res = await fetch(URL_VISITAS);
+      const data = await res.json();
+      const agrupadas = {};
+      (Array.isArray(data) ? data : []).forEach((v) => {
+        (agrupadas[v.fecha] ??= []).push(v);
+      });
+      setVisitas(agrupadas);
+    } catch {
+      setVisitas({});
+    }
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  useEffect(() => {
+    fetch(API.tractores)
+      .then((r) => r.json())
+      .then((d) => setTractores(Array.isArray(d) ? d : []))
+      .catch(() => setTractores([]));
+  }, []);
+
+  const abrirDia = (dia) => {
+    setDiaModal(dia);
+    setForm(formVacio);
+    setError(false);
+  };
+
+  const grupoRequiereCC = (grupoNombre) => {
+    if (!grupoNombre || grupoNombre === "Otro" || grupoNombre === "Repuestos B." || grupoNombre === "Repuestos SP." || grupoNombre === "NINGUNO") {
+      return false;
+    }
+    const gNum = getGruppoNumFromLabel(grupoNombre);
+    const tractoresDelGrupo = tractores.filter(
+      (t) => gNum === null || (t.gruppo ?? 6) === gNum
+    );
+    return tractoresDelGrupo.length > 0;
+  };
+
+  const handleCancelarCC = () => {
+    if (!form.cc) {
+      setForm((f) => ({ ...f, grupo: "", otroGrupo: "", cc: "" }));
+    }
+    setCcModalOpen(false);
+  };
+
+  const handleGrupoChange = (e) => {
+    const grupoSel = e.target.value;
+    setForm((f) => ({ ...f, grupo: grupoSel, otroGrupo: "", cc: "" }));
+    setError(false);
+
+    if (grupoSel === "Repuestos B." || grupoSel === "Repuestos SP." || grupoSel === "Otro") {
+      return;
+    }
+
+    if (grupoSel) {
+      const gNum = getGruppoNumFromLabel(grupoSel);
+      const tractoresDelGrupo = tractores.filter(
+        (t) => gNum === null || (t.gruppo ?? 6) === gNum
+      );
+      if (tractoresDelGrupo.length > 0) {
+        setCcSeleccionadosTemp([]);
+        setCcModalOpen(true);
+      }
+    }
+  };
+
+  const agregarVisita = async () => {
+    if (!form.grupo) { setError(true); return; }
+
+    let grupoFinal = form.grupo;
+    if (form.grupo === "Otro") {
+      if (!form.otroGrupo.trim()) {
+        setError(true);
+        return;
+      }
+      grupoFinal = form.otroGrupo.trim();
+    }
+
+    if (grupoRequiereCC(form.grupo) && !form.cc) {
+      setError(true);
+      Swal.fire({
+        icon: "warning",
+        title: "Centro de Costo requerido",
+        text: "Debes seleccionar al menos un Centro de Costo (CC) para registrar la visita de este grupo.",
+      });
+      return;
+    }
+
+    const key = toKey(año, mes, diaModal);
+    try {
+      const res = await fetch(URL_VISITAS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha: key, grupo: grupoFinal, cc: form.cc, observaciones: form.observaciones }),
+      });
+      if (!res.ok) throw new Error();
+      const nueva = await res.json();
+      setVisitas((prev) => ({ ...prev, [key]: [...(prev[key] ?? []), nueva] }));
+      setForm(formVacio);
+      setError(false);
+      setDiaModal(null);
+      Swal.fire({ icon: "success", title: "Visita registrada", timer: 1500, showConfirmButton: false });
+    } catch {
+      setError(true);
+      Swal.fire({ icon: "error", title: "Error", text: "No se pudo guardar la visita" });
+    }
+  };
+
+  const eliminarVisita = async (key, idx) => {
+    const visita = (visitas[key] ?? [])[idx];
+    if (!visita?._id) return;
+    const result = await Swal.fire({
+      title: "¿Eliminar visita?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#7a4040",
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!result.isConfirmed) return;
+    try {
+      const res = await fetch(`${URL_VISITAS}/${visita._id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setVisitas((prev) => {
+        const lista = [...(prev[key] ?? [])];
+        lista.splice(idx, 1);
+        return { ...prev, [key]: lista };
+      });
+      await Swal.fire({ icon: "success", title: "Visita eliminada", timer: 1200, showConfirmButton: false });
+      setDiaModal(null);
+    } catch {
+      Swal.fire({ icon: "error", title: "Error", text: "No se pudo eliminar la visita" });
+    }
+  };
+
+  const dias        = celdasMes(año, mes);
+  const hoyKey      = toKey(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  const keyModal    = diaModal ? toKey(año, mes, diaModal) : null;
+  const visitasModal = keyModal ? (visitas[keyModal] ?? []) : [];
+  const esMinimoMes = año === 2026 && mes === 4;
+
+  // Calcular cantidad de visitas por grupo y por CC en el mes seleccionado
+  const counts = {};
+  GRUPOS.forEach((g) => {
+    counts[g.label] = 0;
+  });
+
+  const countsCC = {};
+  const targetPrefix = `${año}-${String(mes + 1).padStart(2, "0")}-`;
+  Object.entries(visitas).forEach(([key, list]) => {
+    if (key.startsWith(targetPrefix)) {
+      list.forEach((v) => {
+        if (counts[v.grupo] !== undefined) {
+          counts[v.grupo]++;
+        } else {
+          counts[v.grupo] = 1;
+        }
+        if (v.cc) {
+          const ccs = v.cc.split(",").map((s) => s.trim()).filter(Boolean);
+          ccs.forEach((c) => {
+            countsCC[c] = (countsCC[c] || 0) + 1;
+          });
+        }
+      });
+    }
+  });
+
+  const ccsOrdenados = [...new Set([
+    ...tractores.map((t) => t.cc).filter(Boolean),
+    ...Object.keys(countsCC)
+  ])].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const exportarExcelGrupos = async () => {
+    try {
+      const nombreMes = MESES_NOMBRE[mes];
+      const titulo = `Resumen de Visitas por Grupo - ${nombreMes} ${año}`;
+      const fechaHoy = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+      const columnas = ["Grupo", "Cantidad de Visitas"];
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Visitas por Grupo");
+
+      // Título sin relleno
+      ws.mergeCells(1, 1, 1, 2);
+      const celdaTitulo = ws.getCell("A1");
+      celdaTitulo.value = titulo;
+      celdaTitulo.font = { bold: true, size: 14, color: { argb: "FF000000" } };
+      celdaTitulo.alignment = { horizontal: "center", vertical: "middle" };
+      ws.getRow(1).height = 24;
+
+      // Fecha abajo del título
+      ws.mergeCells(2, 1, 2, 2);
+      const celdaFecha = ws.getCell("A2");
+      celdaFecha.value = `Fecha: ${fechaHoy}`;
+      celdaFecha.font = { italic: true, size: 10, color: { argb: "FF555555" } };
+      celdaFecha.alignment = { horizontal: "center", vertical: "middle" };
+      ws.getRow(2).height = 18;
+
+      ws.addRow([]); // Fila vacía
+
+      // Encabezados sin relleno
+      const filaEncabezado = ws.addRow(columnas);
+      filaEncabezado.height = 22;
+      filaEncabezado.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FF000000" } };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+      });
+
+      const listaGruposFinal = [
+        ...GRUPOS.map((g) => g.label),
+        ...Object.keys(counts).filter((k) => !GRUPOS.some((g) => g.label === k))
+      ];
+
+      listaGruposFinal.forEach((grupoLabel) => {
+        const count = counts[grupoLabel] || 0;
+        const row = ws.addRow([grupoLabel, count]);
+        row.height = 20;
+        row.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
+        row.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
+      });
+
+      const totalVal = Object.values(counts).reduce((a, b) => a + b, 0);
+      const rowTotal = ws.addRow(["Total", totalVal]);
+      rowTotal.height = 22;
+      rowTotal.eachCell((cell) => {
+        cell.font = { bold: true };
+      });
+      rowTotal.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
+      rowTotal.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
+
+      ws.getColumn(1).width = 25;
+      ws.getColumn(2).width = 20;
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Resumen_Visitas_Grupos_${nombreMes}_${año}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      Swal.fire({ icon: "error", title: "Error", text: "No se pudo exportar a Excel" });
+    }
+  };
+
+  const exportarExcelCC = async () => {
+    try {
+      const nombreMes = MESES_NOMBRE[mes];
+      const titulo = `Resumen de Visitas por Centro de Costo (CC) - ${nombreMes} ${año}`;
+      const fechaHoy = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+      const columnas = ["Centro de Costo (CC)", "Descripción", "Cantidad de Visitas"];
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Visitas por CC");
+
+      // Título sin relleno
+      ws.mergeCells(1, 1, 1, 3);
+      const celdaTitulo = ws.getCell("A1");
+      celdaTitulo.value = titulo;
+      celdaTitulo.font = { bold: true, size: 14, color: { argb: "FF000000" } };
+      celdaTitulo.alignment = { horizontal: "center", vertical: "middle" };
+      ws.getRow(1).height = 24;
+
+      // Fecha abajo del título
+      ws.mergeCells(2, 1, 2, 3);
+      const celdaFecha = ws.getCell("A2");
+      celdaFecha.value = `Fecha: ${fechaHoy}`;
+      celdaFecha.font = { italic: true, size: 10, color: { argb: "FF555555" } };
+      celdaFecha.alignment = { horizontal: "center", vertical: "middle" };
+      ws.getRow(2).height = 18;
+
+      ws.addRow([]); // Fila vacía
+
+      // Encabezados sin relleno
+      const filaEncabezado = ws.addRow(columnas);
+      filaEncabezado.height = 22;
+      filaEncabezado.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FF000000" } };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+      });
+
+      ccsOrdenados.forEach((cc) => {
+        const count = countsCC[cc] || 0;
+        const tracInfo = tractores.find((t) => t.cc === cc);
+        const desc = tracInfo?.descripcion || "-";
+        const row = ws.addRow([cc, desc, count]);
+        row.height = 20;
+        row.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
+        row.getCell(2).alignment = { horizontal: "left", vertical: "middle" };
+        row.getCell(3).alignment = { horizontal: "center", vertical: "middle" };
+      });
+
+      const totalVal = Object.values(countsCC).reduce((a, b) => a + b, 0);
+      const rowTotal = ws.addRow(["Total", "", totalVal]);
+      rowTotal.height = 22;
+      rowTotal.eachCell((cell) => {
+        cell.font = { bold: true };
+      });
+      rowTotal.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
+      rowTotal.getCell(3).alignment = { horizontal: "center", vertical: "middle" };
+
+      ws.getColumn(1).width = 22;
+      ws.getColumn(2).width = 35;
+      ws.getColumn(3).width = 20;
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Resumen_Visitas_CC_${nombreMes}_${año}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      Swal.fire({ icon: "error", title: "Error", text: "No se pudo exportar a Excel" });
+    }
+  };
+
+  const añosDisponibles = [...new Set([
+    2026,
+    2027,
+    2028,
+    hoy.getFullYear(),
+    ...Object.keys(visitas).map((k) => Number(k.split("-")[0]))
+  ])].filter((y) => y && y >= 2026).sort((a, b) => a - b);
+
+  const getModalTitle = () => {
+    if (!diaModal) return "";
+    const dateObj = new Date(año, mes, diaModal);
+    const diasSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+    const nombreDia = diasSemana[dateObj.getDay()];
+    return `${nombreDia}, ${diaModal} de ${MESES_NOMBRE[mes]} de ${año}`;
+  };
+
+  return (
+    <Container className={isMobile ? "py-2 px-2" : "py-4"}>
+
+      {/* Encabezado */}
+      <div className={`d-flex justify-content-between align-items-center ${isMobile ? "mb-2" : "mb-4"}`}>
+        <h3 className="fw-bold mb-0" style={{ fontSize: isMobile ? "1.25rem" : undefined }}>Visitas</h3>
+      </div>
+
+      {/* Navegación mes */}
+      <div className={`d-flex align-items-center justify-content-center ${isMobile ? "gap-2 mb-2" : "gap-3 mb-4"}`}>
+        <button
+          onClick={retroceder}
+          style={{ ...estiloNavBtn, opacity: esMinimoMes ? 0.3 : 1, cursor: esMinimoMes ? "default" : "pointer" }}
+        >
+          <i className="bi bi-chevron-left"></i>
+        </button>
+        <div className="d-flex gap-2 align-items-center justify-content-center" style={{ minWidth: isMobile ? "150px" : "250px" }}>
+          <Form.Select
+            value={mes}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              if (año === 2026 && val < 4) {
+                setMes(4);
+              } else {
+                setMes(val);
+              }
+            }}
+            style={{
+              fontSize: isMobile ? "0.9rem" : "1.2rem",
+              fontWeight: "bold",
+              color: "#333",
+              border: "1.5px solid #bbb",
+              borderRadius: "6px",
+              padding: isMobile ? "4px 8px" : "6px 12px",
+              width: isMobile ? "110px" : "140px",
+              cursor: "pointer",
+              backgroundColor: "#fff"
+            }}
+            size="sm"
+          >
+            {MESES_NOMBRE.map((mNombre, idx) => (
+              <option key={idx} value={idx} disabled={año === 2026 && idx < 4}>
+                {mNombre}
+              </option>
+            ))}
+          </Form.Select>
+          <Form.Select
+            value={año}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              if (val === 2026 && mes < 4) {
+                setMes(4);
+              }
+              setAño(val);
+            }}
+            style={{
+              fontSize: isMobile ? "0.9rem" : "1.2rem",
+              fontWeight: "bold",
+              color: "#333",
+              border: "1.5px solid #bbb",
+              borderRadius: "6px",
+              padding: isMobile ? "4px 8px" : "6px 12px",
+              width: isMobile ? "85px" : "100px",
+              cursor: "pointer",
+              backgroundColor: "#fff"
+            }}
+            size="sm"
+          >
+            {añosDisponibles.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </Form.Select>
+        </div>
+        <button onClick={avanzar} style={estiloNavBtn}>
+          <i className="bi bi-chevron-right"></i>
+        </button>
+      </div>
+
+      {/* Calendario */}
+      <div style={{ maxWidth: "860px", margin: "0 auto" }}>
+
+        {/* Encabezados */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: isMobile ? "3px" : "4px", marginBottom: isMobile ? "3px" : "4px" }}>
+          {DIAS.map((d) => {
+            return (
+              <div
+                key={d}
+                style={{
+                  textAlign: "center",
+                  fontWeight: "700",
+                  fontSize: isMobile ? "0.7rem" : "0.82rem",
+                  color: "#666",
+                  padding: isMobile ? "2px 0" : "6px 0",
+                  letterSpacing: "0.5px"
+                }}
+              >
+                {d}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Celdas */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: isMobile ? "3px" : "4px" }}>
+          {dias.map((dia, idx) => {
+            if (!dia) return <div key={`v-${idx}`} />;
+            const key    = toKey(año, mes, dia);
+            const vDia   = visitas[key] ?? [];
+            const esHoy  = key === hoyKey;
+
+            const bgCell = esHoy
+              ? "#eef6f6"
+              : "#fff";
+
+            const hoverBgCell = esHoy
+              ? "#dbebeb"
+              : "#f0f6f6";
+
+            const colorText = esHoy
+              ? COLOR
+              : "#333";
+
+            return (
+              <div
+                key={key}
+                onClick={() => abrirDia(dia)}
+                style={{
+                  border: esHoy ? `2px solid ${COLOR}` : "1.5px solid #ddd",
+                  borderRadius: isMobile ? "6px" : "8px",
+                  padding: isMobile ? "4px 3px" : "8px 6px",
+                  height: isMobile ? "70px" : "105px",
+                  cursor: "pointer",
+                  backgroundColor: bgCell,
+                  transition: "background-color 0.15s",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "flex-start",
+                  overflow: "hidden"
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = hoverBgCell)}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = bgCell)}
+              >
+                <div style={{ fontWeight: esHoy ? "bold" : "normal", fontSize: isMobile ? "0.75rem" : "0.88rem", color: colorText, marginBottom: isMobile ? "1px" : "3px", textAlign: "center", flexShrink: 0 }}>
+                  {dia}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden", flexGrow: 1 }}>
+                  {vDia.slice(0, 2).map((v, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        color: colorGrupo(v.grupo),
+                        fontWeight: "600",
+                        textAlign: "center",
+                        padding: "0 1px",
+                        fontSize: isMobile ? "0.62rem" : "0.72rem",
+                        whiteSpace: "normal",
+                        wordBreak: "break-word",
+                        lineHeight: "1.15",
+                        maxHeight: isMobile ? "28px" : "36px",
+                        overflow: "hidden"
+                      }}
+                    >
+                      {v.grupo}
+                    </div>
+                  ))}
+                  {vDia.length > 2 && (
+                    <div style={{ fontSize: isMobile ? "0.58rem" : "0.68rem", color: "#888", textAlign: "center", flexShrink: 0, marginTop: "auto" }}>
+                      +{vDia.length - 2} más
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Leyenda: grupo — supervisor (desde altas de tractores) */}
+      <div style={{ maxWidth: "860px", margin: "1.5rem auto 0", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+        <div style={{ flex: 1 }}>
+          {[1, 2, 3, 4, 5].map((g) => {
+            const label = `Grupo ${g}`;
+            const sups = [...new Set(
+              tractores
+                .filter((t) => (t.gruppo ?? 6) === g)
+                .map((t) => (t.supervisor || "").trim())
+                .filter(Boolean)
+            )];
+            return (
+              <div key={g} className="d-flex align-items-center mb-1" style={{ fontSize: isMobile ? "0.78rem" : "0.9rem" }}>
+                <span style={{ display: "inline-block", width: "12px", height: "12px", borderRadius: "3px", backgroundColor: colorGrupo(label), marginRight: "8px", flexShrink: 0 }} />
+                <span className="fw-semibold" style={{ minWidth: isMobile ? "55px" : "70px" }}>{label}:</span>
+                <span className="ms-2 text-truncate" style={{ maxWidth: isMobile ? "100px" : "none" }}>{sups.length ? sups.join(", ") : "—"}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: isMobile ? "6px" : "10px" }}>
+          <Button
+            onClick={() => setMostrarItinerario(true)}
+            style={{
+              backgroundColor: "transparent",
+              borderColor: COLOR,
+              color: COLOR,
+              fontWeight: "bold",
+              padding: isMobile ? "6px 12px" : "8px 16px",
+              fontSize: isMobile ? "0.82rem" : "1rem",
+              width: "100%",
+              transition: "all 0.2s ease"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = COLOR;
+              e.currentTarget.style.color = "#fff";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+              e.currentTarget.style.color = COLOR;
+            }}
+          >
+            <i className="bi bi-journal-text me-2"></i>Itinerario
+          </Button>
+          <Button
+            onClick={() => setMostrarResumen(true)}
+            style={{
+              backgroundColor: "transparent",
+              borderColor: "#2b6cb0",
+              color: "#2b6cb0",
+              fontWeight: "bold",
+              padding: isMobile ? "6px 12px" : "8px 16px",
+              fontSize: isMobile ? "0.82rem" : "1rem",
+              width: "100%",
+              transition: "all 0.2s ease"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "#2b6cb0";
+              e.currentTarget.style.color = "#fff";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+              e.currentTarget.style.color = "#2b6cb0";
+            }}
+          >
+            <i className="bi bi-bar-chart-fill me-2"></i>Resumen
+          </Button>
+        </div>
+      </div>
+
+      {/* Modal de Itinerario */}
+      <Modal show={mostrarItinerario} onHide={() => setMostrarItinerario(false)} size="lg" centered contentClassName="border border-dark">
+        <Modal.Header closeButton style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+          <Modal.Title className="fw-bold" style={{ fontSize: isMobile ? "1.1rem" : "1.25rem" }}>
+            <i className="bi bi-calendar4-week me-2"></i>Itinerario de Visitas
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className={isMobile ? "p-2" : "p-4"} style={{ backgroundColor: "#fdfdfd" }}>
+          <div className="table-responsive" style={{ overflowX: "hidden" }}>
+            <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "separate", borderSpacing: "0", margin: "0" }}>
+              <thead>
+                <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+                  <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Día</th>
+                  <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>
+                    Mañana
+                  </th>
+                  <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>
+                    Tarde
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {ITINERARIO.map((item, idx) => {
+                  const getBadgeStyle = (text) => {
+                    const t = (text || "").trim();
+                    if (t === "Visita a Campo") {
+                      return {
+                        backgroundColor: "#e6fffa",
+                        color: "#006d5b",
+                        borderColor: "#b2f5ea"
+                      };
+                    }
+                    if (t === "Visita San Pablo" || t === "Visita Berdina") {
+                      return {
+                        backgroundColor: "#ebf8ff",
+                        color: "#2b6cb0",
+                        borderColor: "#bee3f8"
+                      };
+                    }
+                    if (t === "Repuestos Berdina" || t === "Repuestos B.") {
+                      return {
+                        backgroundColor: "#f3e8ff",
+                        color: "#8e44ad",
+                        borderColor: "#e9d5ff"
+                      };
+                    }
+                    if (t === "Repuestos San Pablo" || t === "Repuestos SP.") {
+                      return {
+                        backgroundColor: "#fff5ed",
+                        color: "#d35400",
+                        borderColor: "#ffe3d1"
+                      };
+                    }
+                    if (t === "Resumen semanal") {
+                      return {
+                        backgroundColor: "#e8f4f8",
+                        color: "#2c5282",
+                        borderColor: "#bee3f8"
+                      };
+                    }
+                    return {
+                      backgroundColor: "#f8f9fa",
+                      color: "#333",
+                      borderColor: "#dee2e6"
+                    };
+                  };
+
+                  return (
+                    <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "#f9fbfb" : "#ffffff" }}>
+                      <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: "#495057", fontSize: isMobile ? "0.75rem" : "0.95rem", width: isMobile ? "50px" : "100px" }}>
+                        {item.dia}
+                      </td>
+                      <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6" }}>
+                        <span
+                          style={{
+                            display: "block",
+                            padding: isMobile ? "4px 6px" : "6px 12px",
+                            borderRadius: "20px",
+                            fontSize: isMobile ? "0.7rem" : "0.88rem",
+                            fontWeight: "600",
+                            textAlign: "center",
+                            whiteSpace: "normal",
+                            wordBreak: "break-word",
+                            lineHeight: "1.2",
+                            ...getBadgeStyle(item.manana)
+                          }}
+                        >
+                          {item.manana}
+                        </span>
+                      </td>
+                      <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6" }}>
+                        <span
+                          style={{
+                            display: "block",
+                            padding: isMobile ? "4px 6px" : "6px 12px",
+                            borderRadius: "20px",
+                            fontSize: isMobile ? "0.7rem" : "0.88rem",
+                            fontWeight: "600",
+                            textAlign: "center",
+                            whiteSpace: "normal",
+                            wordBreak: "break-word",
+                            lineHeight: "1.2",
+                            ...getBadgeStyle(item.tarde)
+                          }}
+                        >
+                          {item.tarde}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setMostrarItinerario(false)}>
+            Cerrar
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal de Resumen Mensual */}
+      <Modal show={mostrarResumen} onHide={() => setMostrarResumen(false)} size="lg" centered contentClassName="border border-dark">
+        <Modal.Header closeButton style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+          <Modal.Title className="fw-bold" style={{ fontSize: isMobile ? "1.1rem" : "1.25rem" }}>
+            <i className="bi bi-bar-chart-fill me-2"></i>Resumen Mensual
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className={isMobile ? "p-2" : "p-4"} style={{ backgroundColor: "#fdfdfd" }}>
+          
+          {/* Controles de Mes, Año y Excel */}
+          <div className="d-flex align-items-center justify-content-center position-relative mb-3">
+            <div className="d-flex gap-2">
+              <Form.Select
+                value={mes}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (año === 2026 && val < 4) {
+                    setMes(4);
+                  } else {
+                    setMes(val);
+                  }
+                }}
+                style={{ maxWidth: "160px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
+                size="sm"
+              >
+                {MESES_NOMBRE.map((nombre, idx) => (
+                  <option key={idx} value={idx} disabled={año === 2026 && idx < 4}>
+                    {nombre}
+                  </option>
+                ))}
+              </Form.Select>
+              <Form.Select
+                value={año}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val === 2026 && mes < 4) {
+                    setMes(4);
+                  }
+                  setAño(val);
+                }}
+                style={{ maxWidth: "100px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
+                size="sm"
+              >
+                {añosDisponibles.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </Form.Select>
+            </div>
+            <Button
+              variant="outline-success"
+              size="sm"
+              className="fw-bold border-0 p-1 px-2 text-success position-absolute end-0"
+              style={{ backgroundColor: "transparent" }}
+              onClick={tabResumen === "grupos" ? exportarExcelGrupos : exportarExcelCC}
+              title="Descargar Excel"
+            >
+              <i className="bi bi-file-earmark-excel-fill me-1 fs-6"></i>Excel
+            </Button>
+          </div>
+
+          {/* Pestañas */}
+          <div className="d-flex justify-content-center mb-4">
+            <div className="btn-group" role="group" style={{ width: isMobile ? "100%" : "auto" }}>
+              <button
+                type="button"
+                className={`btn ${tabResumen === "grupos" ? "btn-dark fw-bold" : "btn-outline-dark"}`}
+                onClick={() => setTabResumen("grupos")}
+                style={{ fontSize: isMobile ? "0.82rem" : "0.95rem" }}
+              >
+                <i className="bi bi-people-fill me-2"></i>Visitas por Grupo
+              </button>
+              <button
+                type="button"
+                className={`btn ${tabResumen === "cc" ? "btn-dark fw-bold" : "btn-outline-dark"}`}
+                onClick={() => setTabResumen("cc")}
+                style={{ fontSize: isMobile ? "0.82rem" : "0.95rem" }}
+              >
+                <i className="bi bi-geo-alt-fill me-2"></i>Visitas por CC
+              </button>
+            </div>
+          </div>
+
+          {/* Planilla 1: Grupos */}
+          {tabResumen === "grupos" && (
+            <div className="table-responsive">
+              <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "separate", borderSpacing: "0", margin: "0" }}>
+                <thead>
+                  <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+                    <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Grupo</th>
+                    <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Visitas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const listaGruposFinal = [
+                      ...GRUPOS.map((g) => g.label),
+                      ...Object.keys(counts).filter((k) => !GRUPOS.some((g) => g.label === k))
+                    ];
+                    return listaGruposFinal.map((grupoLabel, idx) => {
+                      const count = counts[grupoLabel] || 0;
+                      return (
+                        <tr key={grupoLabel} style={{ backgroundColor: idx % 2 === 0 ? "#f9fbfb" : "#ffffff" }}>
+                          <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }}>
+                            <div className="d-flex align-items-center">
+                              <span style={{ display: "inline-block", width: "12px", height: "12px", borderRadius: "3px", backgroundColor: colorGrupo(grupoLabel), marginRight: "8px", flexShrink: 0 }} />
+                              <span className="fw-semibold" style={{ fontSize: isMobile ? "0.82rem" : "0.95rem" }}>{grupoLabel}</span>
+                            </div>
+                          </td>
+                          <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: count > 0 ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
+                            {count}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                  <tr style={{ backgroundColor: "#eaeaea" }}>
+                    <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }} className="fw-bold">
+                      Total
+                    </td>
+                    <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.85rem" : "1rem", color: COLOR }}>
+                      {Object.values(counts).reduce((a, b) => a + b, 0)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Planilla 2: Centros de Costo */}
+          {tabResumen === "cc" && (
+            <div className="table-responsive">
+              <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "separate", borderSpacing: "0", margin: "0" }}>
+                <thead>
+                  <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+                    <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Centro de Costo (CC)</th>
+                    <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Visitas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ccsOrdenados.length === 0 ? (
+                    <tr>
+                      <td colSpan={2} className="text-muted py-4">No hay visitas registradas con CC en este mes</td>
+                    </tr>
+                  ) : (
+                    ccsOrdenados.map((cc, idx) => {
+                      const count = countsCC[cc] || 0;
+                      const tracInfo = tractores.find((t) => t.cc === cc);
+                      return (
+                        <tr key={cc} style={{ backgroundColor: idx % 2 === 0 ? "#f9fbfb" : "#ffffff" }}>
+                          <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }}>
+                            <div className="d-flex align-items-center gap-2">
+                              <span className="fw-bold" style={{ fontSize: isMobile ? "0.85rem" : "0.95rem", color: "#3a7070" }}>{cc}</span>
+                              {tracInfo?.descripcion && (
+                                <span className="text-muted small">— {tracInfo.descripcion}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: count > 0 ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
+                            {count}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                  <tr style={{ backgroundColor: "#eaeaea" }}>
+                    <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }} className="fw-bold">
+                      Total
+                    </td>
+                    <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.85rem" : "1rem", color: COLOR }}>
+                      {Object.values(countsCC).reduce((a, b) => a + b, 0)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setMostrarResumen(false)}>
+            Cerrar
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal Agregar/Editar Visita */}
+      <Modal show={diaModal !== null} onHide={() => setDiaModal(null)} centered contentClassName="border border-dark">
+        <Modal.Header closeButton>
+          <Modal.Title className="fw-bold">
+            {getModalTitle()}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+
+          {/* Visitas ya registradas */}
+          {visitasModal.length > 0 && (
+            <div className="mb-4">
+              <p className="fw-semibold mb-2">Visitas del día:</p>
+              {visitasModal.map((v, i) => (
+                <div
+                  key={i}
+                  style={{
+                    borderLeft: `4px solid ${colorGrupo(v.grupo)}`,
+                    backgroundColor: "#f8f8f8",
+                    borderRadius: "6px",
+                    padding: "8px 12px",
+                    marginBottom: "6px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <div className="d-flex flex-column gap-1">
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                      <strong style={{ color: colorGrupo(v.grupo), fontSize: "1rem" }}>{v.grupo}</strong>
+                      {v.cc && (
+                        <span style={{ color: "#000", fontWeight: "normal", fontSize: "0.78rem" }}>
+                          ({v.cc})
+                        </span>
+                      )}
+                    </div>
+                    {v.observaciones && (
+                      <span className="text-muted ms-1" style={{ fontSize: "0.88rem" }}>
+                        {v.observaciones}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => eliminarVisita(keyModal, i)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#8b4a4a", padding: "4px 8px" }}
+                    title="Eliminar visita"
+                  >
+                    <i className="bi bi-trash fs-5"></i>
+                  </button>
+                </div>
+              ))}
+              <div style={{ height: "1px", backgroundColor: "#bbb", margin: "12px 0 0" }} />
+            </div>
+          )}
+
+          {/* Formulario */}
+          <p className="fw-semibold mb-2">{visitasModal.length > 0 ? "Agregar otra visita:" : "Nueva visita:"}</p>
+
+          <Form.Group className="mb-3">
+            <Form.Label className="fw-semibold">Grupo *</Form.Label>
+            <Form.Select
+              value={form.grupo}
+              onChange={handleGrupoChange}
+              isInvalid={error && !form.grupo}
+              autoFocus
+            >
+              <option value="">— Seleccionar —</option>
+              {GRUPOS.map((g) => (
+                <option key={g.label} value={g.label}>{g.label}</option>
+              ))}
+            </Form.Select>
+            {error && !form.grupo && <Form.Control.Feedback type="invalid">Seleccioná un grupo</Form.Control.Feedback>}
+          </Form.Group>
+
+          {form.grupo === "Otro" && (
+            <Form.Group className="mb-3">
+              <Form.Label className="fw-semibold">Nombre del Grupo *</Form.Label>
+              <Form.Control
+                type="text"
+                placeholder="Especificar grupo..."
+                value={form.otroGrupo || ""}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, otroGrupo: e.target.value }));
+                  setError(false);
+                }}
+                isInvalid={error && !form.otroGrupo.trim()}
+                autoFocus
+              />
+              {error && !form.otroGrupo.trim() && (
+                <Form.Control.Feedback type="invalid">Especificá el nombre del grupo</Form.Control.Feedback>
+              )}
+            </Form.Group>
+          )}
+
+          {(() => {
+            if (!form.grupo || form.grupo === "Repuestos B." || form.grupo === "Repuestos SP." || form.grupo === "NINGUNO") return null;
+            const gNum = getGruppoNumFromLabel(form.grupo);
+            const ccOpciones = tractores.filter((t) => gNum === null || (t.gruppo ?? 6) === gNum);
+            if (ccOpciones.length === 0) return null;
+
+            return (
+              <Form.Group className="mb-3">
+                <Form.Label className="fw-semibold">Centro de Costo (CC)</Form.Label>
+                <Button
+                  variant="outline-secondary"
+                  className="w-100 text-start d-flex justify-content-between align-items-center"
+                  style={{ borderColor: "#ced4da", color: "#333", backgroundColor: "#fff" }}
+                  onClick={() => {
+                    const ccsActuales = form.cc ? form.cc.split(", ").map((s) => s.trim()).filter(Boolean) : [];
+                    setCcSeleccionadosTemp(ccsActuales);
+                    setCcModalOpen(true);
+                  }}
+                >
+                  <span>
+                    {form.cc ? (
+                      <span className="fw-bold text-dark">{form.cc}</span>
+                    ) : (
+                      <span className="text-muted">— Elegir CCs (con tilde) —</span>
+                    )}
+                  </span>
+                  <i className="bi bi-check2-square text-success fs-5 me-1"></i>
+                </Button>
+              </Form.Group>
+            );
+          })()}
+
+          <Form.Group className="mb-1">
+            <Form.Label className="fw-semibold">Observaciones</Form.Label>
+            <Form.Control
+              type="text"
+              placeholder="Observaciones..."
+              value={form.observaciones}
+              onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))}
+              onKeyDown={(e) => e.key === "Enter" && agregarVisita()}
+            />
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setDiaModal(null)}>Cerrar</Button>
+          <Button onClick={agregarVisita} style={{ backgroundColor: COLOR, border: "none", color: "#fff" }}>
+            <i className="bi bi-save me-2"></i>Guardar
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal de Selección de CCs */}
+      <Modal
+        show={ccModalOpen}
+        onHide={handleCancelarCC}
+        centered
+        size="md"
+        contentClassName="border border-dark"
+      >
+        <Modal.Header closeButton style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+          <Modal.Title className="fw-bold" style={{ fontSize: "1.1rem" }}>
+            <i className="bi bi-check2-square me-2"></i>Centros de Costo — {form.grupo}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ maxHeight: "60vh", overflowY: "auto" }}>
+          {(() => {
+            const gNum = getGruppoNumFromLabel(form.grupo);
+            const tractoresDelGrupo = tractores.filter(
+              (t) => gNum === null || (t.gruppo ?? 6) === gNum
+            );
+            const opcionesCCModal = [
+              { cc: "Ninguno", descripcion: "Sin CC asignado" },
+              ...tractoresDelGrupo
+            ];
+
+            return (
+              <div className="d-flex flex-column gap-2">
+                <div className="d-flex justify-content-between align-items-center mb-2 px-1">
+                  <small className="text-muted">Marcar con tilde los CCs deseados (mínimo 1):</small>
+                  <div className="d-flex gap-2">
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0 text-decoration-none"
+                      onClick={() => setCcSeleccionadosTemp(opcionesCCModal.map((t) => t.cc))}
+                    >
+                      Marcar todos
+                    </Button>
+                    <span className="text-muted">|</span>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0 text-decoration-none text-danger"
+                      onClick={() => setCcSeleccionadosTemp([])}
+                    >
+                      Desmarcar todos
+                    </Button>
+                  </div>
+                </div>
+                {opcionesCCModal.map((t) => {
+                  const isChecked = ccSeleccionadosTemp.includes(t.cc);
+                  return (
+                    <div
+                      key={t._id || t.cc}
+                      className={`p-2 px-3 rounded border d-flex align-items-center justify-content-between ${
+                        isChecked ? "border-success bg-light" : "bg-white"
+                      }`}
+                      style={{ cursor: "pointer", transition: "all 0.15s ease" }}
+                      onClick={() => {
+                        setCcSeleccionadosTemp((prev) =>
+                          prev.includes(t.cc) ? prev.filter((c) => c !== t.cc) : [...prev, t.cc]
+                        );
+                      }}
+                    >
+                      <div className="d-flex align-items-center gap-3">
+                        <Form.Check
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}}
+                          style={{ pointerEvents: "none", transform: "scale(1.1)" }}
+                        />
+                        <div>
+                          <span className="fw-bold" style={{ color: t.cc === "Ninguno" ? "#777" : "#3a7070", fontSize: "0.95rem" }}>
+                            {t.cc}
+                          </span>
+                          {t.descripcion && (
+                            <span className="text-muted ms-2 small">— {t.descripcion}</span>
+                          )}
+                        </div>
+                      </div>
+                      {isChecked && <i className="bi bi-check-circle-fill text-success fs-5"></i>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCancelarCC}>
+            Cancelar
+          </Button>
+          <Button
+            style={{
+              backgroundColor: ccSeleccionadosTemp.length > 0 ? "#3a7070" : "#a0a0a0",
+              border: "none",
+              color: "#fff",
+              cursor: ccSeleccionadosTemp.length > 0 ? "pointer" : "not-allowed"
+            }}
+            disabled={ccSeleccionadosTemp.length === 0}
+            onClick={() => {
+              if (ccSeleccionadosTemp.length === 0) return;
+              setForm((f) => ({ ...f, cc: ccSeleccionadosTemp.join(", ") }));
+              setCcModalOpen(false);
+            }}
+          >
+            <i className="bi bi-check-lg me-1"></i>
+            {ccSeleccionadosTemp.length > 0 ? `Confirmar (${ccSeleccionadosTemp.length})` : "Seleccioná al menos 1 CC"}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+    </Container>
+  );
+}
+
+const estiloNavBtn = {
+  background: "none",
+  border: "1.5px solid #bbb",
+  borderRadius: "6px",
+  padding: "6px 16px",
+  fontSize: "1.1rem",
+  cursor: "pointer",
+  transition: "background-color 0.15s",
+};
+
+export default Visitas;

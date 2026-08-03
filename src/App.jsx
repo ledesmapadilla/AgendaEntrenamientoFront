@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Menu from "./components/shared/Menu";
 import Footer from "./components/shared/Footer";
-import Inicio from "./components/pages/Inicio";
+import Visitas from "./components/pages/Visitas";
 import Error404 from "./components/pages/Error404";
 
 function App() {
@@ -10,7 +10,8 @@ function App() {
       <Menu />
       <main>
         <Routes>
-          <Route path="/" element={<Inicio />} />
+          <Route path="/" element={<Visitas />} />
+          <Route path="/visitas" element={<Visitas />} />
           <Route path="*" element={<Error404 />} />
         </Routes>
       </main>
