@@ -81,8 +81,8 @@ function Visitas() {
   const navigate = useNavigate();
   const hoy = new Date();
 
-  const [año, setAño]       = useState(2026);
-  const [mes, setMes]       = useState(6); // Julio
+  const [año, setAño]       = useState(hoy.getFullYear());
+  const [mes, setMes]       = useState(hoy.getMonth());
   const [visitas, setVisitas] = useState({});
   const [diaModal, setDiaModal] = useState(null);
   const [form, setForm]     = useState(formVacio);
@@ -95,7 +95,6 @@ function Visitas() {
   const [ccSeleccionadosTemp, setCcSeleccionadosTemp] = useState([]);
 
   const retroceder = () => {
-    if (año === 2026 && mes === 4) return;
     if (mes === 0) { setMes(11); setAño((a) => a - 1); }
     else setMes((m) => m - 1);
   };
@@ -246,7 +245,7 @@ function Visitas() {
   const hoyKey      = toKey(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
   const keyModal    = diaModal ? toKey(año, mes, diaModal) : null;
   const visitasModal = keyModal ? (visitas[keyModal] ?? []) : [];
-  const esMinimoMes = año === 2026 && mes === 4;
+  const esMinimoMes = false;
 
   // Calcular cantidad de visitas por grupo y por CC en el mes seleccionado
   const counts = {};
@@ -459,14 +458,7 @@ function Visitas() {
         <div className="d-flex gap-2 align-items-center justify-content-center" style={{ minWidth: isMobile ? "150px" : "250px" }}>
           <Form.Select
             value={mes}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              if (año === 2026 && val < 4) {
-                setMes(4);
-              } else {
-                setMes(val);
-              }
-            }}
+            onChange={(e) => setMes(Number(e.target.value))}
             style={{
               fontSize: isMobile ? "0.9rem" : "1.2rem",
               fontWeight: "bold",
@@ -481,20 +473,14 @@ function Visitas() {
             size="sm"
           >
             {MESES_NOMBRE.map((mNombre, idx) => (
-              <option key={idx} value={idx} disabled={año === 2026 && idx < 4}>
+              <option key={idx} value={idx}>
                 {mNombre}
               </option>
             ))}
           </Form.Select>
           <Form.Select
             value={año}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              if (val === 2026 && mes < 4) {
-                setMes(4);
-              }
-              setAño(val);
-            }}
+            onChange={(e) => setAño(Number(e.target.value))}
             style={{
               fontSize: isMobile ? "0.9rem" : "1.2rem",
               fontWeight: "bold",
