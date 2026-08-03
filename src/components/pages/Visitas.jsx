@@ -8,26 +8,25 @@ import { API } from "../../helpers/api";
 
 const URL_VISITAS = API.visitas;
 
-const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie"];
+const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const MESES_NOMBRE = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 const COLOR = "#3a7070";
 
-const GRUPOS = [
-  { label: "Grupo 1",       color: "#4a6fa5" },
-  { label: "Grupo 2",       color: "#52735a" },
-  { label: "Grupo 3",       color: "#9e8850" },
-  { label: "Grupo 4",       color: "#6b5b7b" },
-  { label: "Grupo 5",       color: "#7a5038" },
-  { label: "NINGUNO",       color: "#777777" },
-  { label: "Berdina",       color: "#7a3535" },
-  { label: "San Pablo",     color: "#5a6f40" },
-  { label: "Repuestos B.",  color: "#8e44ad" },
-  { label: "Repuestos SP.", color: "#d35400" },
-  { label: "Otro",          color: "#6c757d" },
+const ACTIVIDADES = [
+  { label: "Natación pileta", color: "#0077b6" },
+  { label: "Natación aguas abiertas", color: "#00b4d8" },
+  { label: "Gimnasio", color: "#e63946" },
+  { label: "Bicicleta", color: "#2a9d8f" },
+  { label: "Otra", color: "#6c757d" },
 ];
+
+function colorGrupo(label) {
+  const l = (label || "").trim();
+  return ACTIVIDADES.find((a) => a.label === l)?.color ?? "#6c757d";
+}
 
 const ITINERARIO = [
   { dia: "Día 1", manana: "Visita a Campo", tarde: "Visita San Pablo" },
@@ -37,24 +36,17 @@ const ITINERARIO = [
   { dia: "Día 5", manana: "Visita a Campo", tarde: "Resumen semanal" }
 ];
 
-function colorGrupo(label) {
-  const l = (label || "").trim();
-  if (l === "Repuestos Berdina" || l === "Repuestos B.") return "#8e44ad";
-  if (l === "Repuestos San Pablo" || l === "Repuestos SP.") return "#d35400";
-  return GRUPOS.find((g) => g.label === l)?.color ?? "#6c757d";
-}
 
 function celdasMes(año, mes) {
   const totalDias = new Date(año, mes + 1, 0).getDate();
+  const primerDiaSemana = new Date(año, mes, 1).getDay(); // 0 = Dom, 1 = Lun, ...
+  const offsetInicial = primerDiaSemana === 0 ? 6 : primerDiaSemana - 1;
+  
   const arr = [];
-  let offsetSet = false;
+  for (let i = 0; i < offsetInicial; i++) {
+    arr.push(null);
+  }
   for (let d = 1; d <= totalDias; d++) {
-    const dow = new Date(año, mes, d).getDay();
-    if (dow === 0 || dow === 6) continue;
-    if (!offsetSet) {
-      for (let i = 0; i < dow - 1; i++) arr.push(null);
-      offsetSet = true;
-    }
     arr.push(d);
   }
   return arr;
@@ -207,10 +199,10 @@ function Visitas() {
       setForm(formVacio);
       setError(false);
       setDiaModal(null);
-      Swal.fire({ icon: "success", title: "Visita registrada", timer: 1500, showConfirmButton: false });
+      Swal.fire({ icon: "success", title: "Entrenamiento registrado", timer: 1500, showConfirmButton: false });
     } catch {
       setError(true);
-      Swal.fire({ icon: "error", title: "Error", text: "No se pudo guardar la visita" });
+      Swal.fire({ icon: "error", title: "Error", text: "No se pudo guardar el entrenamiento" });
     }
   };
 
@@ -218,7 +210,7 @@ function Visitas() {
     const visita = (visitas[key] ?? [])[idx];
     if (!visita?._id) return;
     const result = await Swal.fire({
-      title: "¿Eliminar visita?",
+      title: "¿Eliminar entrenamiento?",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#7a4040",
@@ -234,10 +226,10 @@ function Visitas() {
         lista.splice(idx, 1);
         return { ...prev, [key]: lista };
       });
-      await Swal.fire({ icon: "success", title: "Visita eliminada", timer: 1200, showConfirmButton: false });
+      await Swal.fire({ icon: "success", title: "Entrenamiento eliminado", timer: 1200, showConfirmButton: false });
       setDiaModal(null);
     } catch {
-      Swal.fire({ icon: "error", title: "Error", text: "No se pudo eliminar la visita" });
+      Swal.fire({ icon: "error", title: "Error", text: "No se pudo eliminar el entrenamiento" });
     }
   };
 
@@ -249,7 +241,7 @@ function Visitas() {
 
   // Calcular cantidad de visitas por grupo y por CC en el mes seleccionado
   const counts = {};
-  GRUPOS.forEach((g) => {
+  ACTIVIDADES.forEach((g) => {
     counts[g.label] = 0;
   });
 
@@ -314,8 +306,8 @@ function Visitas() {
       });
 
       const listaGruposFinal = [
-        ...GRUPOS.map((g) => g.label),
-        ...Object.keys(counts).filter((k) => !GRUPOS.some((g) => g.label === k))
+        ...ACTIVIDADES.map((g) => g.label),
+        ...Object.keys(counts).filter((k) => !ACTIVIDADES.some((g) => g.label === k))
       ];
 
       listaGruposFinal.forEach((grupoLabel) => {
@@ -442,11 +434,6 @@ function Visitas() {
   return (
     <Container className={isMobile ? "py-2 px-2" : "py-4"}>
 
-      {/* Encabezado */}
-      <div className={`d-flex justify-content-between align-items-center ${isMobile ? "mb-2" : "mb-4"}`}>
-        <h3 className="fw-bold mb-0" style={{ fontSize: isMobile ? "1.25rem" : undefined }}>Visitas</h3>
-      </div>
-
       {/* Navegación mes */}
       <div className={`d-flex align-items-center justify-content-center ${isMobile ? "gap-2 mb-2" : "gap-3 mb-4"}`}>
         <button
@@ -510,7 +497,7 @@ function Visitas() {
       <div style={{ maxWidth: "860px", margin: "0 auto" }}>
 
         {/* Encabezados */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: isMobile ? "3px" : "4px", marginBottom: isMobile ? "3px" : "4px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: isMobile ? "2px" : "4px", marginBottom: isMobile ? "2px" : "4px" }}>
           {DIAS.map((d) => {
             return (
               <div
@@ -518,7 +505,7 @@ function Visitas() {
                 style={{
                   textAlign: "center",
                   fontWeight: "700",
-                  fontSize: isMobile ? "0.7rem" : "0.82rem",
+                  fontSize: isMobile ? "0.68rem" : "0.82rem",
                   color: "#666",
                   padding: isMobile ? "2px 0" : "6px 0",
                   letterSpacing: "0.5px"
@@ -531,7 +518,7 @@ function Visitas() {
         </div>
 
         {/* Celdas */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: isMobile ? "3px" : "4px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: isMobile ? "2px" : "4px" }}>
           {dias.map((dia, idx) => {
             if (!dia) return <div key={`v-${idx}`} />;
             const key    = toKey(año, mes, dia);
@@ -605,81 +592,61 @@ function Visitas() {
         </div>
       </div>
 
-      {/* Leyenda: grupo — supervisor (desde altas de tractores) */}
-      <div style={{ maxWidth: "860px", margin: "1.5rem auto 0", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
-        <div style={{ flex: 1 }}>
-          {[1, 2, 3, 4, 5].map((g) => {
-            const label = `Grupo ${g}`;
-            const sups = [...new Set(
-              tractores
-                .filter((t) => (t.gruppo ?? 6) === g)
-                .map((t) => (t.supervisor || "").trim())
-                .filter(Boolean)
-            )];
-            return (
-              <div key={g} className="d-flex align-items-center mb-1" style={{ fontSize: isMobile ? "0.78rem" : "0.9rem" }}>
-                <span style={{ display: "inline-block", width: "12px", height: "12px", borderRadius: "3px", backgroundColor: colorGrupo(label), marginRight: "8px", flexShrink: 0 }} />
-                <span className="fw-semibold" style={{ minWidth: isMobile ? "55px" : "70px" }}>{label}:</span>
-                <span className="ms-2 text-truncate" style={{ maxWidth: isMobile ? "100px" : "none" }}>{sups.length ? sups.join(", ") : "—"}</span>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: isMobile ? "6px" : "10px" }}>
-          <Button
-            onClick={() => setMostrarItinerario(true)}
-            style={{
-              backgroundColor: "transparent",
-              borderColor: COLOR,
-              color: COLOR,
-              fontWeight: "bold",
-              padding: isMobile ? "6px 12px" : "8px 16px",
-              fontSize: isMobile ? "0.82rem" : "1rem",
-              width: "100%",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = COLOR;
-              e.currentTarget.style.color = "#fff";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-              e.currentTarget.style.color = COLOR;
-            }}
-          >
-            <i className="bi bi-journal-text me-2"></i>Itinerario
-          </Button>
-          <Button
-            onClick={() => setMostrarResumen(true)}
-            style={{
-              backgroundColor: "transparent",
-              borderColor: "#2b6cb0",
-              color: "#2b6cb0",
-              fontWeight: "bold",
-              padding: isMobile ? "6px 12px" : "8px 16px",
-              fontSize: isMobile ? "0.82rem" : "1rem",
-              width: "100%",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#2b6cb0";
-              e.currentTarget.style.color = "#fff";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-              e.currentTarget.style.color = "#2b6cb0";
-            }}
-          >
-            <i className="bi bi-bar-chart-fill me-2"></i>Resumen
-          </Button>
-        </div>
+      {/* Botones inferiores */}
+      <div style={{ maxWidth: "860px", margin: "1.5rem auto 0", display: "flex", justifyContent: "center", alignItems: "center", gap: "12px" }}>
+        <Button
+          onClick={() => setMostrarItinerario(true)}
+          style={{
+            backgroundColor: "transparent",
+            borderColor: COLOR,
+            color: COLOR,
+            fontWeight: "bold",
+            padding: isMobile ? "8px 16px" : "10px 20px",
+            fontSize: isMobile ? "0.9rem" : "1rem",
+            flex: 1,
+            transition: "all 0.2s ease"
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = COLOR;
+            e.currentTarget.style.color = "#fff";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.color = COLOR;
+          }}
+        >
+          <i className="bi bi-journal-text me-2"></i>Plan
+        </Button>
+        <Button
+          onClick={() => setMostrarResumen(true)}
+          style={{
+            backgroundColor: "transparent",
+            borderColor: "#2b6cb0",
+            color: "#2b6cb0",
+            fontWeight: "bold",
+            padding: isMobile ? "8px 16px" : "10px 20px",
+            fontSize: isMobile ? "0.9rem" : "1rem",
+            flex: 1,
+            transition: "all 0.2s ease"
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "#2b6cb0";
+            e.currentTarget.style.color = "#fff";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.color = "#2b6cb0";
+          }}
+        >
+          <i className="bi bi-bar-chart-fill me-2"></i>Resumen
+        </Button>
       </div>
 
-      {/* Modal de Itinerario */}
+      {/* Modal de Plan */}
       <Modal show={mostrarItinerario} onHide={() => setMostrarItinerario(false)} size="lg" centered contentClassName="border border-dark">
         <Modal.Header closeButton style={{ backgroundColor: "#3a7070", color: "#fff" }}>
           <Modal.Title className="fw-bold" style={{ fontSize: isMobile ? "1.1rem" : "1.25rem" }}>
-            <i className="bi bi-calendar4-week me-2"></i>Itinerario de Visitas
+            <i className="bi bi-calendar4-week me-2"></i>Plan de Visitas
           </Modal.Title>
         </Modal.Header>
         <Modal.Body className={isMobile ? "p-2" : "p-4"} style={{ backgroundColor: "#fdfdfd" }}>
@@ -894,8 +861,8 @@ function Visitas() {
                 <tbody>
                   {(() => {
                     const listaGruposFinal = [
-                      ...GRUPOS.map((g) => g.label),
-                      ...Object.keys(counts).filter((k) => !GRUPOS.some((g) => g.label === k))
+                      ...ACTIVIDADES.map((g) => g.label),
+                      ...Object.keys(counts).filter((k) => !ACTIVIDADES.some((g) => g.label === k))
                     ];
                     return listaGruposFinal.map((grupoLabel, idx) => {
                       const count = counts[grupoLabel] || 0;
@@ -987,24 +954,24 @@ function Visitas() {
       {/* Modal Agregar/Editar Visita */}
       <Modal show={diaModal !== null} onHide={() => setDiaModal(null)} centered contentClassName="border border-dark">
         <Modal.Header closeButton>
-          <Modal.Title className="fw-bold">
+          <Modal.Title className="fw-bold w-100 text-center" style={{ fontSize: "1.1rem" }}>
             {getModalTitle()}
           </Modal.Title>
         </Modal.Header>
-        <Modal.Body>
+        <Modal.Body className="text-center px-4">
 
           {/* Visitas ya registradas */}
           {visitasModal.length > 0 && (
-            <div className="mb-4">
-              <p className="fw-semibold mb-2">Visitas del día:</p>
+            <div className="mb-3">
+              <p className="fw-semibold mb-2 text-center small text-uppercase text-muted" style={{ letterSpacing: "0.5px" }}>Entrenamientos del día:</p>
               {visitasModal.map((v, i) => (
                 <div
                   key={i}
                   style={{
                     borderLeft: `4px solid ${colorGrupo(v.grupo)}`,
-                    backgroundColor: "#f8f8f8",
+                    backgroundColor: "#f8f9fa",
                     borderRadius: "6px",
-                    padding: "8px 12px",
+                    padding: "6px 12px",
                     marginBottom: "6px",
                     display: "flex",
                     justifyContent: "space-between",
@@ -1012,9 +979,9 @@ function Visitas() {
                     gap: "8px",
                   }}
                 >
-                  <div className="d-flex flex-column gap-1">
+                  <div className="d-flex flex-column gap-1 text-start">
                     <div className="d-flex align-items-center gap-2 flex-wrap">
-                      <strong style={{ color: colorGrupo(v.grupo), fontSize: "1rem" }}>{v.grupo}</strong>
+                      <strong style={{ color: colorGrupo(v.grupo), fontSize: "0.9rem" }}>{v.grupo}</strong>
                       {v.cc && (
                         <span style={{ color: "#000", fontWeight: "normal", fontSize: "0.78rem" }}>
                           ({v.cc})
@@ -1022,49 +989,60 @@ function Visitas() {
                       )}
                     </div>
                     {v.observaciones && (
-                      <span className="text-muted ms-1" style={{ fontSize: "0.88rem" }}>
+                      <span className="text-muted ms-1" style={{ fontSize: "0.82rem" }}>
                         {v.observaciones}
                       </span>
                     )}
                   </div>
                   <button
                     onClick={() => eliminarVisita(keyModal, i)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#8b4a4a", padding: "4px 8px" }}
-                    title="Eliminar visita"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#8b4a4a", padding: "4px 6px" }}
+                    title="Eliminar entrenamiento"
                   >
-                    <i className="bi bi-trash fs-5"></i>
+                    <i className="bi bi-trash fs-6"></i>
                   </button>
                 </div>
               ))}
-              <div style={{ height: "1px", backgroundColor: "#bbb", margin: "12px 0 0" }} />
+              <div style={{ height: "1px", backgroundColor: "#e0e0e0", margin: "10px 0 0" }} />
             </div>
           )}
 
           {/* Formulario */}
-          <p className="fw-semibold mb-2">{visitasModal.length > 0 ? "Agregar otra visita:" : "Nueva visita:"}</p>
+          <p className="fw-semibold mb-3 text-center small text-secondary">
+            {visitasModal.length > 0 ? "Agregar otro entrenamiento:" : "Nuevo entrenamiento:"}
+          </p>
 
-          <Form.Group className="mb-3">
-            <Form.Label className="fw-semibold">Grupo *</Form.Label>
+          <Form.Group className="mb-3 d-flex flex-column align-items-center">
+            <Form.Label className="fw-semibold text-center small mb-1">Actividad *</Form.Label>
             <Form.Select
+              size="sm"
               value={form.grupo}
               onChange={handleGrupoChange}
               isInvalid={error && !form.grupo}
               autoFocus
+              style={{
+                maxWidth: "260px",
+                textAlign: "center",
+                textAlignLast: "center",
+                fontSize: "0.88rem",
+                borderRadius: "6px"
+              }}
             >
-              <option value="">— Seleccionar —</option>
-              {GRUPOS.map((g) => (
-                <option key={g.label} value={g.label}>{g.label}</option>
+              <option value="">— Seleccionar Actividad —</option>
+              {ACTIVIDADES.map((a) => (
+                <option key={a.label} value={a.label}>{a.label}</option>
               ))}
             </Form.Select>
-            {error && !form.grupo && <Form.Control.Feedback type="invalid">Seleccioná un grupo</Form.Control.Feedback>}
+            {error && !form.grupo && <Form.Control.Feedback type="invalid" className="small text-center">Seleccioná una actividad</Form.Control.Feedback>}
           </Form.Group>
 
-          {form.grupo === "Otro" && (
-            <Form.Group className="mb-3">
-              <Form.Label className="fw-semibold">Nombre del Grupo *</Form.Label>
+          {form.grupo === "Otra" && (
+            <Form.Group className="mb-3 d-flex flex-column align-items-center">
+              <Form.Label className="fw-semibold text-center small mb-1">Nombre de la Actividad *</Form.Label>
               <Form.Control
+                size="sm"
                 type="text"
-                placeholder="Especificar grupo..."
+                placeholder="Especificar actividad..."
                 value={form.otroGrupo || ""}
                 onChange={(e) => {
                   setForm((f) => ({ ...f, otroGrupo: e.target.value }));
@@ -1072,9 +1050,15 @@ function Visitas() {
                 }}
                 isInvalid={error && !form.otroGrupo.trim()}
                 autoFocus
+                style={{
+                  maxWidth: "260px",
+                  textAlign: "center",
+                  fontSize: "0.88rem",
+                  borderRadius: "6px"
+                }}
               />
               {error && !form.otroGrupo.trim() && (
-                <Form.Control.Feedback type="invalid">Especificá el nombre del grupo</Form.Control.Feedback>
+                <Form.Control.Feedback type="invalid" className="small text-center">Especificá la actividad</Form.Control.Feedback>
               )}
             </Form.Group>
           )}
@@ -1086,46 +1070,61 @@ function Visitas() {
             if (ccOpciones.length === 0) return null;
 
             return (
-              <Form.Group className="mb-3">
-                <Form.Label className="fw-semibold">Centro de Costo (CC)</Form.Label>
+              <Form.Group className="mb-3 d-flex flex-column align-items-center">
+                <Form.Label className="fw-semibold text-center small mb-1">Centro de Costo (CC)</Form.Label>
                 <Button
+                  size="sm"
                   variant="outline-secondary"
-                  className="w-100 text-start d-flex justify-content-between align-items-center"
-                  style={{ borderColor: "#ced4da", color: "#333", backgroundColor: "#fff" }}
+                  className="w-100 text-center d-flex justify-content-between align-items-center"
+                  style={{
+                    maxWidth: "260px",
+                    borderColor: "#ced4da",
+                    color: "#333",
+                    backgroundColor: "#fff",
+                    fontSize: "0.88rem",
+                    borderRadius: "6px"
+                  }}
                   onClick={() => {
                     const ccsActuales = form.cc ? form.cc.split(", ").map((s) => s.trim()).filter(Boolean) : [];
                     setCcSeleccionadosTemp(ccsActuales);
                     setCcModalOpen(true);
                   }}
                 >
-                  <span>
+                  <span className="w-100 text-center">
                     {form.cc ? (
                       <span className="fw-bold text-dark">{form.cc}</span>
                     ) : (
-                      <span className="text-muted">— Elegir CCs (con tilde) —</span>
+                      <span className="text-muted">— Elegir CCs —</span>
                     )}
                   </span>
-                  <i className="bi bi-check2-square text-success fs-5 me-1"></i>
+                  <i className="bi bi-check2-square text-success fs-6 ms-1"></i>
                 </Button>
               </Form.Group>
             );
           })()}
 
-          <Form.Group className="mb-1">
-            <Form.Label className="fw-semibold">Observaciones</Form.Label>
+          <Form.Group className="mb-2 d-flex flex-column align-items-center">
+            <Form.Label className="fw-semibold text-center small mb-1">Observaciones</Form.Label>
             <Form.Control
+              size="sm"
               type="text"
               placeholder="Observaciones..."
               value={form.observaciones}
               onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))}
               onKeyDown={(e) => e.key === "Enter" && agregarVisita()}
+              style={{
+                maxWidth: "260px",
+                textAlign: "center",
+                fontSize: "0.88rem",
+                borderRadius: "6px"
+              }}
             />
           </Form.Group>
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setDiaModal(null)}>Cerrar</Button>
-          <Button onClick={agregarVisita} style={{ backgroundColor: COLOR, border: "none", color: "#fff" }}>
-            <i className="bi bi-save me-2"></i>Guardar
+        <Modal.Footer className="justify-content-center gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setDiaModal(null)} style={{ padding: "4px 16px" }}>Cerrar</Button>
+          <Button size="sm" onClick={agregarVisita} style={{ backgroundColor: COLOR, border: "none", color: "#fff", padding: "4px 16px" }}>
+            <i className="bi bi-save me-1"></i>Guardar
           </Button>
         </Modal.Footer>
       </Modal>

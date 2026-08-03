@@ -7,7 +7,6 @@ import Error404 from "./components/pages/Error404";
 function App() {
   return (
     <BrowserRouter>
-      <Menu />
       <main>
         <Routes>
           <Route path="/" element={<Visitas />} />
