@@ -158,7 +158,10 @@ function Entrenamientos() {
         }),
       });
 
-      if (!res.ok) throw new Error("Error en respuesta del servidor");
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || "Error en respuesta del servidor");
+      }
       const nuevo = await res.json();
 
       setEntrenamientos((prev) => ({ ...prev, [key]: [...(prev[key] ?? []), nuevo] }));
@@ -169,7 +172,7 @@ function Entrenamientos() {
     } catch (err) {
       console.error("Error al guardar:", err);
       setError(true);
-      Swal.fire({ icon: "error", title: "Error", text: "No se pudo guardar el entrenamiento" });
+      Swal.fire({ icon: "error", title: "Error", text: err.message || "No se pudo guardar el entrenamiento" });
     }
   };
 
