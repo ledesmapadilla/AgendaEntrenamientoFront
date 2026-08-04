@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Container, Button, Modal, Form } from "react-bootstrap";
+import { Container, Button, Modal, Form, Nav } from "react-bootstrap";
 import Swal from "sweetalert2";
 import ExcelJS from "exceljs";
 import { isMobile } from "../../utils/device";
@@ -46,6 +46,35 @@ function toKey(año, mes, dia) {
   return `${año}-${String(mes + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 }
 
+function getSemanasDelMes(año, mes) {
+  const totalDias = new Date(año, mes + 1, 0).getDate();
+  const semanas = [];
+  
+  let diaActual = 1;
+  let numeroSemana = 1;
+
+  while (diaActual <= totalDias) {
+    const fechaInicio = new Date(año, mes, diaActual);
+    const dayOfWeek = fechaInicio.getDay();
+    const diasHastaDomingo = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+    const diaFin = Math.min(totalDias, diaActual + diasHastaDomingo);
+
+    semanas.push({
+      numero: numeroSemana,
+      label: `Semana ${numeroSemana} (${diaActual}/${mes + 1} - ${diaFin}/${mes + 1})`,
+      inicioKey: toKey(año, mes, diaActual),
+      finKey: toKey(año, mes, diaFin),
+      diaInicio: diaActual,
+      diaFin: diaFin,
+    });
+
+    diaActual = diaFin + 1;
+    numeroSemana++;
+  }
+
+  return semanas;
+}
+
 const formVacio = { actividad: "", otraActividad: "", observaciones: "" };
 
 function Entrenamientos() {
@@ -59,6 +88,8 @@ function Entrenamientos() {
   const [error, setError]             = useState(false);
   const [mostrarPlan, setMostrarPlan] = useState(false);
   const [mostrarResumen, setMostrarResumen] = useState(false);
+  const [tabResumen, setTabResumen]   = useState("mensual");
+  const [semanaIndex, setSemanaIndex] = useState(0);
 
   const retroceder = () => {
     if (mes === 0) { setMes(11); setAño((a) => a - 1); }
@@ -193,6 +224,28 @@ function Entrenamientos() {
       });
     }
   });
+
+  // Calcular semanas del mes seleccionado y filtrar según semanaIndex
+  const semanasDelMes = getSemanasDelMes(año, mes);
+  const semanaSeleccionada = semanasDelMes[semanaIndex] || semanasDelMes[0];
+
+  const countsSemanalFiltro = {};
+  ACTIVIDADES.forEach((a) => { countsSemanalFiltro[a.label] = 0; });
+
+  if (semanaSeleccionada) {
+    Object.entries(entrenamientos).forEach(([key, list]) => {
+      if (key >= semanaSeleccionada.inicioKey && key <= semanaSeleccionada.finKey) {
+        list.forEach((v) => {
+          const nombreAct = v.actividad || v.grupo || "Otra";
+          if (countsSemanalFiltro[nombreAct] !== undefined) {
+            countsSemanalFiltro[nombreAct]++;
+          } else {
+            countsSemanalFiltro[nombreAct] = 1;
+          }
+        });
+      }
+    });
+  }
 
   const exportarExcelResumen = async () => {
     try {
@@ -490,7 +543,40 @@ function Entrenamientos() {
           </Modal.Title>
         </Modal.Header>
         <Modal.Body className={isMobile ? "p-2" : "p-4"} style={{ backgroundColor: "#fdfdfd" }}>
-          <p className="text-center text-muted my-3">Plan de entrenamientos semanales.</p>
+          <div className="table-responsive">
+            <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "collapse", margin: "0" }}>
+              <thead>
+                <tr style={{ backgroundColor: "transparent", color: "#3a7070" }}>
+                  <th style={{ padding: isMobile ? "8px 4px" : "12px", border: "1.5px solid #bbb", fontWeight: "700", fontSize: isMobile ? "0.82rem" : "0.95rem", width: "30%" }}>Día</th>
+                  <th style={{ padding: isMobile ? "8px 4px" : "12px", border: "1.5px solid #bbb", fontWeight: "700", fontSize: isMobile ? "0.82rem" : "0.95rem", width: "35%" }}>Mañana</th>
+                  <th style={{ padding: isMobile ? "8px 4px" : "12px", border: "1.5px solid #bbb", fontWeight: "700", fontSize: isMobile ? "0.82rem" : "0.95rem", width: "35%" }}>Tarde</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { dia: "Lunes", manana: "Pileta", tarde: "" },
+                  { dia: "Martes", manana: "Gimnasio", tarde: "Bicicleta" },
+                  { dia: "Miércoles", manana: "Pileta", tarde: "" },
+                  { dia: "Jueves", manana: "Gimnasio", tarde: "Pileta" },
+                  { dia: "Viernes", manana: "Pileta", tarde: "" },
+                  { dia: "Sábado", manana: "Bicicleta", tarde: "" },
+                  { dia: "Domingo", manana: "Descanso", tarde: "Descanso" },
+                ].map((item, idx) => (
+                  <tr key={idx} style={{ backgroundColor: "transparent" }}>
+                    <td className="fw-bold" style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #ccc", color: "#333", fontSize: isMobile ? "0.8rem" : "0.95rem" }}>
+                      {item.dia}
+                    </td>
+                    <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #ccc", color: "#000", fontWeight: "600", fontSize: isMobile ? "0.8rem" : "0.92rem" }}>
+                      {item.manana || <span className="text-muted fw-normal">—</span>}
+                    </td>
+                    <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #ccc", color: "#000", fontWeight: "600", fontSize: isMobile ? "0.8rem" : "0.92rem" }}>
+                      {item.tarde || <span className="text-muted fw-normal">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Modal.Body>
         <Modal.Footer className="justify-content-center">
           <Button size="sm" variant="secondary" onClick={() => setMostrarPlan(false)}>
@@ -499,91 +585,209 @@ function Entrenamientos() {
         </Modal.Footer>
       </Modal>
 
-      {/* Modal de Resumen Mensual */}
+      {/* Modal de Resumen Mensual y Semanal */}
       <Modal show={mostrarResumen} onHide={() => setMostrarResumen(false)} size="lg" centered contentClassName="border border-dark">
         <Modal.Header closeButton style={{ backgroundColor: "#3a7070", color: "#fff" }}>
           <Modal.Title className="fw-bold" style={{ fontSize: isMobile ? "1.1rem" : "1.25rem" }}>
-            <i className="bi bi-bar-chart-fill me-2"></i>Resumen Mensual
+            <i className="bi bi-bar-chart-fill me-2"></i>Resumen
           </Modal.Title>
         </Modal.Header>
         <Modal.Body className={isMobile ? "p-2" : "p-4"} style={{ backgroundColor: "#fdfdfd" }}>
-          <div className="d-flex align-items-center justify-content-center position-relative mb-3">
-            <div className="d-flex gap-2">
-              <Form.Select
-                value={mes}
-                onChange={(e) => setMes(Number(e.target.value))}
-                style={{ maxWidth: "150px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
-                size="sm"
-              >
-                {MESES_NOMBRE.map((nombre, idx) => (
-                  <option key={idx} value={idx}>{nombre}</option>
-                ))}
-              </Form.Select>
-              <Form.Select
-                value={año}
-                onChange={(e) => setAño(Number(e.target.value))}
-                style={{ maxWidth: "100px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
-                size="sm"
-              >
-                {añosDisponibles.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </Form.Select>
-            </div>
-            <Button
-              variant="outline-success"
-              size="sm"
-              className="fw-bold border-0 p-1 px-2 text-success position-absolute end-0"
-              style={{ backgroundColor: "transparent" }}
-              onClick={exportarExcelResumen}
-              title="Descargar Excel"
-            >
-              <i className="bi bi-file-earmark-excel-fill me-1 fs-6"></i>Excel
-            </Button>
+          
+          {/* Solapas Mensual / Semanal */}
+          <div className="d-flex justify-content-center mb-3">
+            <Nav variant="tabs" activeKey={tabResumen} onSelect={(k) => setTabResumen(k)} style={{ borderBottom: "2px solid #3a7070" }}>
+              <Nav.Item>
+                <Nav.Link eventKey="mensual" style={{ fontWeight: "bold", fontSize: "0.92rem", color: tabResumen === "mensual" ? "#3a7070" : "#555" }}>
+                  <i className="bi bi-calendar-month me-1"></i>Mensual
+                </Nav.Link>
+              </Nav.Item>
+              <Nav.Item>
+                <Nav.Link eventKey="semanal" style={{ fontWeight: "bold", fontSize: "0.92rem", color: tabResumen === "semanal" ? "#3a7070" : "#555" }}>
+                  <i className="bi bi-calendar-week me-1"></i>Semanal
+                </Nav.Link>
+              </Nav.Item>
+            </Nav>
           </div>
 
-          <div className="table-responsive">
-            <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "separate", borderSpacing: "0", margin: "0" }}>
-              <thead>
-                <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
-                  <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
-                  <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const listaActividadesFinal = [
-                    ...ACTIVIDADES.map((a) => a.label),
-                    ...Object.keys(counts).filter((k) => !ACTIVIDADES.some((a) => a.label === k))
-                  ];
-                  return listaActividadesFinal.map((actLabel, idx) => {
-                    const count = counts[actLabel] || 0;
-                    return (
-                      <tr key={actLabel} style={{ backgroundColor: idx % 2 === 0 ? "#f9fbfb" : "#ffffff" }}>
-                        <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }}>
-                          <div className="d-flex align-items-center">
-                            <span style={{ display: "inline-block", width: "12px", height: "12px", borderRadius: "3px", backgroundColor: colorActividad(actLabel), marginRight: "8px", flexShrink: 0 }} />
-                            <span className="fw-semibold" style={{ fontSize: isMobile ? "0.82rem" : "0.95rem" }}>{actLabel}</span>
-                          </div>
-                        </td>
-                        <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: count > 0 ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
-                          {count}
-                        </td>
-                      </tr>
-                    );
-                  });
-                })()}
-                <tr style={{ backgroundColor: "#eaeaea" }}>
-                  <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }} className="fw-bold">
-                    Total
-                  </td>
-                  <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.85rem" : "1rem", color: COLOR }}>
-                    {Object.values(counts).reduce((a, b) => a + b, 0)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          {tabResumen === "mensual" && (
+            <>
+              <div className="d-flex align-items-center justify-content-center position-relative mb-3">
+                <div className="d-flex gap-2">
+                  <Form.Select
+                    value={mes}
+                    onChange={(e) => setMes(Number(e.target.value))}
+                    style={{ maxWidth: "150px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
+                    size="sm"
+                  >
+                    {MESES_NOMBRE.map((nombre, idx) => (
+                      <option key={idx} value={idx}>{nombre}</option>
+                    ))}
+                  </Form.Select>
+                  <Form.Select
+                    value={año}
+                    onChange={(e) => setAño(Number(e.target.value))}
+                    style={{ maxWidth: "100px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
+                    size="sm"
+                  >
+                    {añosDisponibles.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </Form.Select>
+                </div>
+                <Button
+                  variant="outline-success"
+                  size="sm"
+                  className="fw-bold border-0 p-1 px-2 text-success position-absolute end-0"
+                  style={{ backgroundColor: "transparent" }}
+                  onClick={exportarExcelResumen}
+                  title="Descargar Excel"
+                >
+                  <i className="bi bi-file-earmark-excel-fill me-1 fs-6"></i>Excel
+                </Button>
+              </div>
+
+              <div className="table-responsive">
+                <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "separate", borderSpacing: "0", margin: "0" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const listaActividadesFinal = [
+                        ...ACTIVIDADES.map((a) => a.label),
+                        ...Object.keys(counts).filter((k) => !ACTIVIDADES.some((a) => a.label === k))
+                      ];
+                      return listaActividadesFinal.map((actLabel, idx) => {
+                        const count = counts[actLabel] || 0;
+                        return (
+                          <tr key={actLabel} style={{ backgroundColor: idx % 2 === 0 ? "#f9fbfb" : "#ffffff" }}>
+                            <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }}>
+                              <span className="fw-semibold" style={{ fontSize: isMobile ? "0.82rem" : "0.95rem", color: "#000" }}>{actLabel}</span>
+                            </td>
+                            <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: count > 0 ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
+                              {count}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                    <tr style={{ backgroundColor: "#eaeaea" }}>
+                      <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }} className="fw-bold">
+                        Total Mensual
+                      </td>
+                      <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.85rem" : "1rem", color: COLOR }}>
+                        {Object.values(counts).reduce((a, b) => a + b, 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {tabResumen === "semanal" && (
+            <>
+              <div className="d-flex flex-column align-items-center justify-content-center position-relative mb-3 gap-2">
+                <div className="d-flex gap-2">
+                  <Form.Select
+                    value={mes}
+                    onChange={(e) => {
+                      setMes(Number(e.target.value));
+                      setSemanaIndex(0);
+                    }}
+                    style={{ maxWidth: "140px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
+                    size="sm"
+                  >
+                    {MESES_NOMBRE.map((nombre, idx) => (
+                      <option key={idx} value={idx}>{nombre}</option>
+                    ))}
+                  </Form.Select>
+                  <Form.Select
+                    value={año}
+                    onChange={(e) => {
+                      setAño(Number(e.target.value));
+                      setSemanaIndex(0);
+                    }}
+                    style={{ maxWidth: "90px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
+                    size="sm"
+                  >
+                    {añosDisponibles.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </Form.Select>
+                </div>
+                
+                <div className="d-flex gap-2 align-items-center">
+                  <Form.Select
+                    value={semanaIndex}
+                    onChange={(e) => setSemanaIndex(Number(e.target.value))}
+                    style={{ minWidth: "220px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
+                    size="sm"
+                  >
+                    {semanasDelMes.map((s, idx) => (
+                      <option key={idx} value={idx}>{s.label}</option>
+                    ))}
+                  </Form.Select>
+
+                  <Button
+                    variant="outline-success"
+                    size="sm"
+                    className="fw-bold border-0 p-1 px-2 text-success"
+                    style={{ backgroundColor: "transparent" }}
+                    onClick={exportarExcelResumen}
+                    title="Descargar Excel"
+                  >
+                    <i className="bi bi-file-earmark-excel-fill me-1 fs-6"></i>Excel
+                  </Button>
+                </div>
+              </div>
+
+              <div className="table-responsive">
+                <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "separate", borderSpacing: "0", margin: "0" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad en la Semana</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const listaActividadesFinal = [
+                        ...ACTIVIDADES.map((a) => a.label),
+                        ...Object.keys(countsSemanalFiltro).filter((k) => !ACTIVIDADES.some((a) => a.label === k))
+                      ];
+                      return listaActividadesFinal.map((actLabel, idx) => {
+                        const count = countsSemanalFiltro[actLabel] || 0;
+                        return (
+                          <tr key={actLabel} style={{ backgroundColor: idx % 2 === 0 ? "#f9fbfb" : "#ffffff" }}>
+                            <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }}>
+                              <span className="fw-semibold" style={{ fontSize: isMobile ? "0.82rem" : "0.95rem", color: "#000" }}>{actLabel}</span>
+                            </td>
+                            <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: count > 0 ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
+                              {count}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                    <tr style={{ backgroundColor: "#eaeaea" }}>
+                      <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }} className="fw-bold">
+                        Total Semanal
+                      </td>
+                      <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.85rem" : "1rem", color: COLOR }}>
+                        {Object.values(countsSemanalFiltro).reduce((a, b) => a + b, 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
         </Modal.Body>
         <Modal.Footer className="justify-content-center">
           <Button size="sm" variant="secondary" onClick={() => setMostrarResumen(false)}>
