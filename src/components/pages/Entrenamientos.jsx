@@ -15,8 +15,8 @@ const MESES_NOMBRE = [
 const COLOR = "#3a7070";
 
 const ACTIVIDADES = [
-  { label: "Natación pileta", color: "#0077b6" },
-  { label: "Natación aguas abiertas", color: "#00b4d8" },
+  { label: "Pileta", color: "#0077b6" },
+  { label: "Aguas abiertas", color: "#00b4d8" },
   { label: "Gimnasio", color: "#e63946" },
   { label: "Bicicleta", color: "#2a9d8f" },
   { label: "Otra", color: "#6c757d" },
