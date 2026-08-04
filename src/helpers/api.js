@@ -1,12 +1,14 @@
-// Detección dinámica de entorno según la ubicación en tiempo de ejecución (window.location.hostname)
+// Detección dinámica en tiempo de ejecución basada en window.location.hostname
 const isLocalhost = typeof window !== "undefined" && (
   window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1"
 );
 
-export const API_URL = import.meta.env.VITE_API_URL
-  ? import.meta.env.VITE_API_URL
-  : (isLocalhost ? "http://localhost:3000/api" : "https://agenda-entrenamiento-back.vercel.app/api");
+// En desarrollo local (localhost/127.0.0.1) apunta al servidor local :3000.
+// En producción / dispositivos móviles / Vercel apunta SIEMPRE al backend desplegado en Vercel.
+export const API_URL = isLocalhost
+  ? (import.meta.env.VITE_API_URL || "http://localhost:3000/api")
+  : "https://agenda-entrenamiento-back.vercel.app/api";
 
 export const API = {
   base: API_URL,
