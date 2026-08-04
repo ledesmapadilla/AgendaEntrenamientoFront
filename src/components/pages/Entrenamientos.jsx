@@ -546,13 +546,13 @@ function Entrenamientos() {
           </Modal.Title>
         </Modal.Header>
         <Modal.Body className={isMobile ? "p-2" : "p-4"} style={{ backgroundColor: "#fdfdfd" }}>
-          <div className="table-responsive">
-            <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "collapse", margin: "0" }}>
+          <div className="table-responsive" style={{ border: "1.5px solid #3a7070", borderRadius: "10px", overflow: "hidden" }}>
+            <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderCollapse: "collapse", margin: "0" }}>
               <thead>
-                <tr style={{ backgroundColor: "transparent", color: "#3a7070" }}>
-                  <th style={{ padding: isMobile ? "8px 4px" : "12px", border: "1.5px solid #bbb", fontWeight: "700", fontSize: isMobile ? "0.82rem" : "0.95rem", width: "30%" }}>Día</th>
-                  <th style={{ padding: isMobile ? "8px 4px" : "12px", border: "1.5px solid #bbb", fontWeight: "700", fontSize: isMobile ? "0.82rem" : "0.95rem", width: "35%" }}>Mañana</th>
-                  <th style={{ padding: isMobile ? "8px 4px" : "12px", border: "1.5px solid #bbb", fontWeight: "700", fontSize: isMobile ? "0.82rem" : "0.95rem", width: "35%" }}>Tarde</th>
+                <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
+                  <th style={{ padding: isMobile ? "8px 4px" : "12px", borderBottom: "2px solid #2e5959", borderRight: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.85rem" : "0.95rem", width: "30%" }}>Día</th>
+                  <th style={{ width: "35%", borderBottom: "2px solid #2e5959" }}></th>
+                  <th style={{ width: "35%", borderBottom: "2px solid #2e5959" }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -566,13 +566,13 @@ function Entrenamientos() {
                   { dia: "Domingo", manana: "Descanso", tarde: "Descanso" },
                 ].map((item, idx) => (
                   <tr key={idx} style={{ backgroundColor: "transparent" }}>
-                    <td className="fw-bold" style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #ccc", color: "#333", fontSize: isMobile ? "0.8rem" : "0.95rem" }}>
+                    <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #d0e2e2", borderRight: "2px solid #c0d8d8", color: "#3a7070", fontWeight: "700", backgroundColor: "#f4f8f8", fontSize: isMobile ? "0.85rem" : "0.98rem" }}>
                       {item.dia}
                     </td>
-                    <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #ccc", color: "#000", fontWeight: "600", fontSize: isMobile ? "0.8rem" : "0.92rem" }}>
+                    <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #e0e0e0", color: "#000", fontWeight: "500", fontSize: isMobile ? "0.8rem" : "0.92rem" }}>
                       {item.manana || <span className="text-muted fw-normal">—</span>}
                     </td>
-                    <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #ccc", color: "#000", fontWeight: "600", fontSize: isMobile ? "0.8rem" : "0.92rem" }}>
+                    <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #e0e0e0", color: "#000", fontWeight: "500", fontSize: isMobile ? "0.8rem" : "0.92rem" }}>
                       {item.tarde || <span className="text-muted fw-normal">—</span>}
                     </td>
                   </tr>
@@ -638,24 +638,26 @@ function Entrenamientos() {
                     ))}
                   </Form.Select>
                 </div>
-                <Button
-                  variant="outline-success"
-                  size="sm"
-                  className="fw-bold border-0 p-1 px-2 text-success position-absolute end-0"
-                  style={{ backgroundColor: "transparent" }}
-                  onClick={exportarExcelResumen}
-                  title="Descargar Excel"
-                >
-                  <i className="bi bi-file-earmark-excel-fill me-1 fs-6"></i>Excel
-                </Button>
+                {!isMobile && (
+                  <Button
+                    variant="outline-success"
+                    size="sm"
+                    className="fw-bold border-0 p-1 px-2 text-success position-absolute end-0"
+                    style={{ backgroundColor: "transparent" }}
+                    onClick={exportarExcelResumen}
+                    title="Descargar Excel"
+                  >
+                    <i className="bi bi-file-earmark-excel-fill me-1 fs-6"></i>Excel
+                  </Button>
+                )}
               </div>
 
-              <div className="table-responsive">
-                <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "separate", borderSpacing: "0", margin: "0" }}>
+              <div className="table-responsive" style={{ border: "1.5px solid #3a7070", borderRadius: "10px", overflow: "hidden" }}>
+                <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderCollapse: "collapse", margin: "0" }}>
                   <thead>
                     <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
-                      <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
-                      <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -736,25 +738,27 @@ function Entrenamientos() {
                     ))}
                   </Form.Select>
 
-                  <Button
-                    variant="outline-success"
-                    size="sm"
-                    className="fw-bold border-0 p-1 px-2 text-success"
-                    style={{ backgroundColor: "transparent" }}
-                    onClick={exportarExcelResumen}
-                    title="Descargar Excel"
-                  >
-                    <i className="bi bi-file-earmark-excel-fill me-1 fs-6"></i>Excel
-                  </Button>
+                  {!isMobile && (
+                    <Button
+                      variant="outline-success"
+                      size="sm"
+                      className="fw-bold border-0 p-1 px-2 text-success"
+                      style={{ backgroundColor: "transparent" }}
+                      onClick={exportarExcelResumen}
+                      title="Descargar Excel"
+                    >
+                      <i className="bi bi-file-earmark-excel-fill me-1 fs-6"></i>Excel
+                    </Button>
+                  )}
                 </div>
               </div>
 
-              <div className="table-responsive">
-                <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderRadius: "8px", overflow: "hidden", borderCollapse: "separate", borderSpacing: "0", margin: "0" }}>
+              <div className="table-responsive" style={{ border: "1.5px solid #3a7070", borderRadius: "10px", overflow: "hidden" }}>
+                <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderCollapse: "collapse", margin: "0" }}>
                   <thead>
                     <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
-                      <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
-                      <th style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad en la Semana</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad en la Semana</th>
                     </tr>
                   </thead>
                   <tbody>
