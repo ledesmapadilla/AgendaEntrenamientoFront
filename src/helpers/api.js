@@ -14,4 +14,5 @@ export const API = {
   base: API_URL,
   entrenamientos: `${API_URL}/entrenamientos`,
   visitas: `${API_URL}/entrenamientos`,
+  plan: `${API_URL}/plan`,
 };

@@ -6,6 +6,7 @@ import { isMobile } from "../../utils/device";
 import { API } from "../../helpers/api";
 
 const URL_ENTRENAMIENTOS = API.entrenamientos;
+const URL_PLAN = API.plan;
 
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const MESES_NOMBRE = [
@@ -25,6 +26,19 @@ const ACTIVIDADES = [
 function colorActividad(label) {
   const l = (label || "").trim();
   return ACTIVIDADES.find((a) => a.label === l)?.color ?? "#6c757d";
+}
+
+function formatCantidadActividad(actividad, valor, count) {
+  if (actividad === "Pileta" || actividad === "Aguas abiertas") {
+    if (!valor || count === 0) return "0 m";
+    return `${Number(valor).toLocaleString("es-AR")} m`;
+  }
+  if (actividad === "Bicicleta") {
+    if (!valor || count === 0) return "0 km";
+    const num = Number(valor);
+    return `${Number.isInteger(num) ? num : num.toFixed(1)} km`;
+  }
+  return "—";
 }
 
 function celdasMes(año, mes) {
@@ -75,7 +89,7 @@ function getSemanasDelMes(año, mes) {
   return semanas;
 }
 
-const formVacio = { actividad: "", otraActividad: "", observaciones: "" };
+const formVacio = { actividad: "", otraActividad: "", observaciones: "", cantidad: "" };
 
 function Entrenamientos() {
   const hoy = new Date();
@@ -90,6 +104,16 @@ function Entrenamientos() {
   const [mostrarResumen, setMostrarResumen] = useState(false);
   const [tabResumen, setTabResumen]   = useState("mensual");
   const [semanaIndex, setSemanaIndex] = useState(0);
+
+  const [planMetrosSemanal, setPlanMetrosSemanal] = useState(() => {
+    return localStorage.getItem("plan_metros_semanal") || "0";
+  });
+  const [planKmSemanal, setPlanKmSemanal] = useState(() => {
+    return localStorage.getItem("plan_km_semanal") || "0";
+  });
+  const [editandoPlan, setEditandoPlan] = useState(false);
+  const [tempMetros, setTempMetros] = useState("");
+  const [tempKm, setTempKm] = useState("");
 
   const retroceder = () => {
     if (mes === 0) { setMes(11); setAño((a) => a - 1); }
@@ -116,7 +140,58 @@ function Entrenamientos() {
     }
   };
 
-  useEffect(() => { cargar(); }, []);
+  const cargarPlan = async () => {
+    try {
+      const res = await fetch(URL_PLAN);
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          if (data.metrosSemanal !== undefined) {
+            setPlanMetrosSemanal(String(data.metrosSemanal));
+            localStorage.setItem("plan_metros_semanal", String(data.metrosSemanal));
+          }
+          if (data.kmSemanal !== undefined) {
+            setPlanKmSemanal(String(data.kmSemanal));
+            localStorage.setItem("plan_km_semanal", String(data.kmSemanal));
+          }
+        }
+      }
+    } catch {
+      // Usar valores locales en caso de desconexión
+    }
+  };
+
+  const guardarPlan = async () => {
+    const m = Math.max(0, Number(tempMetros) || 0);
+    const k = Math.max(0, parseFloat(String(tempKm).replace(",", ".")) || 0);
+    setPlanMetrosSemanal(String(m));
+    setPlanKmSemanal(String(k));
+    localStorage.setItem("plan_metros_semanal", String(m));
+    localStorage.setItem("plan_km_semanal", String(k));
+    setEditandoPlan(false);
+
+    try {
+      await fetch(URL_PLAN, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metrosSemanal: m, kmSemanal: k }),
+      });
+    } catch (e) {
+      console.warn("No se pudo sincronizar el plan con el servidor:", e);
+    }
+
+    Swal.fire({
+      icon: "success",
+      title: "Objetivos guardados",
+      timer: 1500,
+      showConfirmButton: false,
+    });
+  };
+
+  useEffect(() => {
+    cargar();
+    cargarPlan();
+  }, []);
 
   const abrirDia = (dia) => {
     setDiaModal(dia);
@@ -126,7 +201,7 @@ function Entrenamientos() {
 
   const handleActividadChange = (e) => {
     const actSel = e.target.value;
-    setForm((f) => ({ ...f, actividad: actSel, otraActividad: "" }));
+    setForm((f) => ({ ...f, actividad: actSel, otraActividad: "", cantidad: "" }));
     setError(false);
   };
 
@@ -145,6 +220,18 @@ function Entrenamientos() {
       actividadFinal = form.otraActividad.trim();
     }
 
+    const pideMetros = form.actividad === "Pileta" || form.actividad === "Aguas abiertas";
+    const pideKm = form.actividad === "Bicicleta";
+
+    let cantNum = 0;
+    if (pideMetros || pideKm) {
+      cantNum = parseFloat(String(form.cantidad).replace(",", "."));
+      if (!form.cantidad || isNaN(cantNum) || cantNum <= 0) {
+        setError(true);
+        return;
+      }
+    }
+
     const key = toKey(año, mes, diaModal);
     try {
       const res = await fetch(URL_ENTRENAMIENTOS, {
@@ -154,7 +241,8 @@ function Entrenamientos() {
           fecha: key,
           actividad: actividadFinal,
           grupo: actividadFinal,
-          observaciones: form.observaciones || ""
+          observaciones: form.observaciones || "",
+          cantidad: cantNum,
         }),
       });
 
@@ -208,10 +296,12 @@ function Entrenamientos() {
   const keyModal       = diaModal ? toKey(año, mes, diaModal) : null;
   const modalList      = keyModal ? (entrenamientos[keyModal] ?? []) : [];
 
-  // Calcular cantidad de entrenamientos por actividad en el mes seleccionado
+  // Calcular cantidad de entrenamientos y sumatoria de metros/km por actividad en el mes seleccionado
   const counts = {};
+  const cantidades = {};
   ACTIVIDADES.forEach((a) => {
     counts[a.label] = 0;
+    cantidades[a.label] = 0;
   });
 
   const targetPrefix = `${año}-${String(mes + 1).padStart(2, "0")}-`;
@@ -219,10 +309,13 @@ function Entrenamientos() {
     if (key.startsWith(targetPrefix)) {
       list.forEach((v) => {
         const nombreAct = v.actividad || v.grupo || "Otra";
+        const cantVal = Number(v.cantidad) || 0;
         if (counts[nombreAct] !== undefined) {
           counts[nombreAct]++;
+          cantidades[nombreAct] = (cantidades[nombreAct] || 0) + cantVal;
         } else {
           counts[nombreAct] = 1;
+          cantidades[nombreAct] = cantVal;
         }
       });
     }
@@ -233,17 +326,24 @@ function Entrenamientos() {
   const semanaSeleccionada = semanasDelMes[semanaIndex] || semanasDelMes[0];
 
   const countsSemanalFiltro = {};
-  ACTIVIDADES.forEach((a) => { countsSemanalFiltro[a.label] = 0; });
+  const cantidadesSemanalFiltro = {};
+  ACTIVIDADES.forEach((a) => {
+    countsSemanalFiltro[a.label] = 0;
+    cantidadesSemanalFiltro[a.label] = 0;
+  });
 
   if (semanaSeleccionada) {
     Object.entries(entrenamientos).forEach(([key, list]) => {
       if (key >= semanaSeleccionada.inicioKey && key <= semanaSeleccionada.finKey) {
         list.forEach((v) => {
           const nombreAct = v.actividad || v.grupo || "Otra";
+          const cantVal = Number(v.cantidad) || 0;
           if (countsSemanalFiltro[nombreAct] !== undefined) {
             countsSemanalFiltro[nombreAct]++;
+            cantidadesSemanalFiltro[nombreAct] = (cantidadesSemanalFiltro[nombreAct] || 0) + cantVal;
           } else {
             countsSemanalFiltro[nombreAct] = 1;
+            cantidadesSemanalFiltro[nombreAct] = cantVal;
           }
         });
       }
@@ -253,20 +353,23 @@ function Entrenamientos() {
   const exportarExcelResumen = async () => {
     try {
       const nombreMes = MESES_NOMBRE[mes];
-      const titulo = `Resumen de Entrenamientos - ${nombreMes} ${año}`;
+      const esSemanal = tabResumen === "semanal";
+      const titulo = esSemanal
+        ? `Resumen Semanal (${semanaSeleccionada?.label || ""}) - ${nombreMes} ${año}`
+        : `Resumen de Entrenamientos - ${nombreMes} ${año}`;
       const fechaHoy = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
-      const columnas = ["Actividad", "Cantidad de Entrenamientos"];
+      const columnas = ["Actividad", "Entrenamientos", "Cantidad"];
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Entrenamientos");
 
-      ws.mergeCells(1, 1, 1, 2);
+      ws.mergeCells(1, 1, 1, 3);
       const celdaTitulo = ws.getCell("A1");
       celdaTitulo.value = titulo;
       celdaTitulo.font = { bold: true, size: 14, color: { argb: "FF000000" } };
       celdaTitulo.alignment = { horizontal: "center", vertical: "middle" };
       ws.getRow(1).height = 24;
 
-      ws.mergeCells(2, 1, 2, 2);
+      ws.mergeCells(2, 1, 2, 3);
       const celdaFecha = ws.getCell("A2");
       celdaFecha.value = `Fecha: ${fechaHoy}`;
       celdaFecha.font = { italic: true, size: 10, color: { argb: "FF555555" } };
@@ -282,37 +385,56 @@ function Entrenamientos() {
         cell.alignment = { horizontal: "center", vertical: "middle" };
       });
 
-      const listaActidadesFinal = [
+      const currentCounts = esSemanal ? countsSemanalFiltro : counts;
+      const currentCantidades = esSemanal ? cantidadesSemanalFiltro : cantidades;
+
+      const listaActividadesFinal = [
         ...ACTIVIDADES.map((a) => a.label),
-        ...Object.keys(counts).filter((k) => !ACTIVIDADES.some((a) => a.label === k))
+        ...Object.keys(currentCounts).filter((k) => !ACTIVIDADES.some((a) => a.label === k))
       ];
 
-      listaActidadesFinal.forEach((actLabel) => {
-        const count = counts[actLabel] || 0;
-        const row = ws.addRow([actLabel, count]);
+      listaActividadesFinal.forEach((actLabel) => {
+        const count = currentCounts[actLabel] || 0;
+        const cant = currentCantidades[actLabel] || 0;
+        const cantTexto = formatCantidadActividad(actLabel, cant, count);
+        const row = ws.addRow([actLabel, count, cantTexto]);
         row.height = 20;
         row.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
         row.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
+        row.getCell(3).alignment = { horizontal: "center", vertical: "middle" };
       });
 
-      const totalVal = Object.values(counts).reduce((a, b) => a + b, 0);
-      const rowTotal = ws.addRow(["Total", totalVal]);
+      const totalVal = Object.values(currentCounts).reduce((a, b) => a + b, 0);
+      const totalMetrosVal = (currentCantidades["Pileta"] || 0) + (currentCantidades["Aguas abiertas"] || 0);
+      const totalKmVal = currentCantidades["Bicicleta"] || 0;
+      let totalCantTexto = "—";
+      if (totalMetrosVal > 0 && totalKmVal > 0) {
+        totalCantTexto = `${totalMetrosVal.toLocaleString("es-AR")} m | ${Number.isInteger(totalKmVal) ? totalKmVal : totalKmVal.toFixed(1)} km`;
+      } else if (totalMetrosVal > 0) {
+        totalCantTexto = `${totalMetrosVal.toLocaleString("es-AR")} m`;
+      } else if (totalKmVal > 0) {
+        totalCantTexto = `${Number.isInteger(totalKmVal) ? totalKmVal : totalKmVal.toFixed(1)} km`;
+      }
+
+      const rowTotal = ws.addRow([esSemanal ? "Total Semanal" : "Total", totalVal, totalCantTexto]);
       rowTotal.height = 22;
       rowTotal.eachCell((cell) => {
         cell.font = { bold: true };
       });
       rowTotal.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
       rowTotal.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
+      rowTotal.getCell(3).alignment = { horizontal: "center", vertical: "middle" };
 
-      ws.getColumn(1).width = 30;
-      ws.getColumn(2).width = 25;
+      ws.getColumn(1).width = 25;
+      ws.getColumn(2).width = 20;
+      ws.getColumn(3).width = 25;
 
       const buf = await wb.xlsx.writeBuffer();
       const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Resumen_Entrenamientos_${nombreMes}_${año}.xlsx`;
+      a.download = `${esSemanal ? "Resumen_Semanal" : "Resumen_Entrenamientos"}_${nombreMes}_${año}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -456,6 +578,10 @@ function Entrenamientos() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden", flexGrow: 1 }}>
                   {vDia.slice(0, 2).map((v, i) => {
                     const actNombre = v.actividad || v.grupo;
+                    const esBici = actNombre === "Bicicleta";
+                    const esAgua = actNombre === "Pileta" || actNombre === "Aguas abiertas";
+                    const cantNum = Number(v.cantidad) || 0;
+                    const detalleCant = cantNum > 0 ? ` (${cantNum}${esBici ? "km" : (esAgua ? "m" : "")})` : "";
                     return (
                       <div
                         key={i}
@@ -472,7 +598,7 @@ function Entrenamientos() {
                           overflow: "hidden"
                         }}
                       >
-                        {actNombre}
+                        {actNombre}{detalleCant}
                       </div>
                     );
                   })}
@@ -577,14 +703,112 @@ function Entrenamientos() {
                     </td>
                   </tr>
                 ))}
+                <tr style={{ backgroundColor: "#eef6f6", borderTop: "2px solid #3a7070" }}>
+                  <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #d0e2e2", borderRight: "2px solid #c0d8d8", color: "#3a7070", fontWeight: "700", backgroundColor: "#eef6f6", fontSize: isMobile ? "0.85rem" : "0.98rem" }}>
+                    <i className="bi bi-water me-1"></i>Metros semanal
+                  </td>
+                  <td colSpan={2} style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #e0e0e0", textAlign: "center" }}>
+                    {editandoPlan ? (
+                      <div className="d-flex align-items-center justify-content-center gap-1">
+                        <Form.Control
+                          type="number"
+                          size="sm"
+                          value={tempMetros}
+                          onChange={(e) => setTempMetros(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && guardarPlan()}
+                          style={{ width: "130px", textAlign: "center", fontWeight: "bold" }}
+                          placeholder="0"
+                          min="0"
+                          autoFocus
+                        />
+                        <span className="fw-bold text-muted small">m</span>
+                      </div>
+                    ) : (
+                      <span
+                        className="fw-bold"
+                        style={{ color: "#0077b6", fontSize: isMobile ? "0.9rem" : "1.05rem", cursor: "pointer" }}
+                        onClick={() => {
+                          setTempMetros(planMetrosSemanal);
+                          setTempKm(planKmSemanal);
+                          setEditandoPlan(true);
+                        }}
+                        title="Clic para editar"
+                      >
+                        {Number(planMetrosSemanal || 0).toLocaleString("es-AR")} m
+                        <i className="bi bi-pencil-square ms-2 small text-muted"></i>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+                <tr style={{ backgroundColor: "#eef6f6" }}>
+                  <td style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #d0e2e2", borderRight: "2px solid #c0d8d8", color: "#3a7070", fontWeight: "700", backgroundColor: "#eef6f6", fontSize: isMobile ? "0.85rem" : "0.98rem" }}>
+                    <i className="bi bi-bicycle me-1"></i>Km semanal
+                  </td>
+                  <td colSpan={2} style={{ padding: isMobile ? "8px 4px" : "12px", border: "1px solid #e0e0e0", textAlign: "center" }}>
+                    {editandoPlan ? (
+                      <div className="d-flex align-items-center justify-content-center gap-1">
+                        <Form.Control
+                          type="number"
+                          size="sm"
+                          value={tempKm}
+                          onChange={(e) => setTempKm(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && guardarPlan()}
+                          style={{ width: "130px", textAlign: "center", fontWeight: "bold" }}
+                          placeholder="0"
+                          min="0"
+                          step="0.5"
+                        />
+                        <span className="fw-bold text-muted small">km</span>
+                      </div>
+                    ) : (
+                      <span
+                        className="fw-bold"
+                        style={{ color: "#2a9d8f", fontSize: isMobile ? "0.9rem" : "1.05rem", cursor: "pointer" }}
+                        onClick={() => {
+                          setTempMetros(planMetrosSemanal);
+                          setTempKm(planKmSemanal);
+                          setEditandoPlan(true);
+                        }}
+                        title="Clic para editar"
+                      >
+                        {planKmSemanal || 0} km
+                        <i className="bi bi-pencil-square ms-2 small text-muted"></i>
+                      </span>
+                    )}
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
         </Modal.Body>
-        <Modal.Footer className="justify-content-center">
-          <Button size="sm" variant="secondary" onClick={() => setMostrarPlan(false)}>
-            Cerrar
-          </Button>
+        <Modal.Footer className="justify-content-center gap-2">
+          {editandoPlan ? (
+            <>
+              <Button size="sm" variant="secondary" onClick={() => setEditandoPlan(false)}>
+                Cancelar
+              </Button>
+              <Button size="sm" style={{ backgroundColor: COLOR, borderColor: COLOR, color: "#fff" }} onClick={guardarPlan}>
+                <i className="bi bi-check-lg me-1"></i>Guardar Objetivos
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline-secondary"
+                onClick={() => {
+                  setTempMetros(planMetrosSemanal);
+                  setTempKm(planKmSemanal);
+                  setEditandoPlan(true);
+                }}
+              >
+                <i className="bi bi-pencil me-1"></i>Editar Objetivos
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setMostrarPlan(false)}>
+                Cerrar
+              </Button>
+            </>
+          )}
         </Modal.Footer>
       </Modal>
 
@@ -656,8 +880,9 @@ function Entrenamientos() {
                 <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderCollapse: "collapse", margin: "0" }}>
                   <thead>
                     <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
-                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
-                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem", width: "40%" }}>Actividad</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem", width: "30%" }}>Entrenamientos</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem", width: "30%" }}>Cantidad</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -668,6 +893,9 @@ function Entrenamientos() {
                       ];
                       return listaActividadesFinal.map((actLabel, idx) => {
                         const count = counts[actLabel] || 0;
+                        const cant = cantidades[actLabel] || 0;
+                        const textoCantidad = formatCantidadActividad(actLabel, cant, count);
+                        const tieneCantidad = count > 0 && cant > 0;
                         return (
                           <tr key={actLabel} style={{ backgroundColor: idx % 2 === 0 ? "#f9fbfb" : "#ffffff" }}>
                             <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }}>
@@ -675,6 +903,9 @@ function Entrenamientos() {
                             </td>
                             <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: count > 0 ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
                               {count}
+                            </td>
+                            <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: tieneCantidad ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
+                              {textoCantidad}
                             </td>
                           </tr>
                         );
@@ -686,6 +917,18 @@ function Entrenamientos() {
                       </td>
                       <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.85rem" : "1rem", color: COLOR }}>
                         {Object.values(counts).reduce((a, b) => a + b, 0)}
+                      </td>
+                      <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.8rem" : "0.95rem", color: COLOR }}>
+                        {(() => {
+                          const totalMetros = (cantidades["Pileta"] || 0) + (cantidades["Aguas abiertas"] || 0);
+                          const totalKm = cantidades["Bicicleta"] || 0;
+                          if (totalMetros > 0 && totalKm > 0) {
+                            return `${totalMetros.toLocaleString("es-AR")} m | ${Number.isInteger(totalKm) ? totalKm : totalKm.toFixed(1)} km`;
+                          }
+                          if (totalMetros > 0) return `${totalMetros.toLocaleString("es-AR")} m`;
+                          if (totalKm > 0) return `${Number.isInteger(totalKm) ? totalKm : totalKm.toFixed(1)} km`;
+                          return "—";
+                        })()}
                       </td>
                     </tr>
                   </tbody>
@@ -757,8 +1000,9 @@ function Entrenamientos() {
                 <table className="table table-bordered align-middle text-center" style={{ width: "100%", borderCollapse: "collapse", margin: "0" }}>
                   <thead>
                     <tr style={{ backgroundColor: "#3a7070", color: "#fff" }}>
-                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Actividad</th>
-                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem" }}>Cantidad en la Semana</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem", width: "40%" }}>Actividad</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem", width: "30%" }}>Entrenamientos</th>
+                      <th style={{ padding: isMobile ? "6px 4px" : "12px", borderBottom: "2px solid #2e5959", fontWeight: "700", fontSize: isMobile ? "0.78rem" : "0.95rem", width: "30%" }}>Cantidad</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -769,6 +1013,9 @@ function Entrenamientos() {
                       ];
                       return listaActividadesFinal.map((actLabel, idx) => {
                         const count = countsSemanalFiltro[actLabel] || 0;
+                        const cant = cantidadesSemanalFiltro[actLabel] || 0;
+                        const textoCantidad = formatCantidadActividad(actLabel, cant, count);
+                        const tieneCantidad = count > 0 && cant > 0;
                         return (
                           <tr key={actLabel} style={{ backgroundColor: idx % 2 === 0 ? "#f9fbfb" : "#ffffff" }}>
                             <td style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", textAlign: "left", paddingLeft: isMobile ? "10px" : "20px" }}>
@@ -776,6 +1023,9 @@ function Entrenamientos() {
                             </td>
                             <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: count > 0 ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
                               {count}
+                            </td>
+                            <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #dee2e6", color: tieneCantidad ? COLOR : "#888", fontSize: isMobile ? "0.85rem" : "1rem" }}>
+                              {textoCantidad}
                             </td>
                           </tr>
                         );
@@ -787,6 +1037,18 @@ function Entrenamientos() {
                       </td>
                       <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.85rem" : "1rem", color: COLOR }}>
                         {Object.values(countsSemanalFiltro).reduce((a, b) => a + b, 0)}
+                      </td>
+                      <td className="fw-bold" style={{ padding: isMobile ? "6px 4px" : "12px", border: "1px solid #ccc", fontSize: isMobile ? "0.8rem" : "0.95rem", color: COLOR }}>
+                        {(() => {
+                          const totalMetros = (cantidadesSemanalFiltro["Pileta"] || 0) + (cantidadesSemanalFiltro["Aguas abiertas"] || 0);
+                          const totalKm = cantidadesSemanalFiltro["Bicicleta"] || 0;
+                          if (totalMetros > 0 && totalKm > 0) {
+                            return `${totalMetros.toLocaleString("es-AR")} m | ${Number.isInteger(totalKm) ? totalKm : totalKm.toFixed(1)} km`;
+                          }
+                          if (totalMetros > 0) return `${totalMetros.toLocaleString("es-AR")} m`;
+                          if (totalKm > 0) return `${Number.isInteger(totalKm) ? totalKm : totalKm.toFixed(1)} km`;
+                          return "—";
+                        })()}
                       </td>
                     </tr>
                   </tbody>
@@ -818,6 +1080,7 @@ function Entrenamientos() {
               <p className="fw-semibold mb-2 text-center small text-uppercase text-muted" style={{ letterSpacing: "0.5px" }}>Entrenamientos del día:</p>
               {modalList.map((item, i) => {
                 const actNombre = item.actividad || item.grupo;
+                const cantNum = Number(item.cantidad) || 0;
                 return (
                   <div
                     key={i}
@@ -834,7 +1097,24 @@ function Entrenamientos() {
                     }}
                   >
                     <div className="d-flex flex-column gap-1 text-start">
-                      <strong style={{ color: colorActividad(actNombre), fontSize: "0.9rem" }}>{actNombre}</strong>
+                      <div className="d-flex align-items-center gap-2">
+                        <strong style={{ color: colorActividad(actNombre), fontSize: "0.9rem" }}>{actNombre}</strong>
+                        {cantNum > 0 && (
+                          <span
+                            className="badge"
+                            style={{
+                              backgroundColor: colorActividad(actNombre),
+                              color: "#fff",
+                              fontSize: "0.75rem",
+                              fontWeight: "600",
+                              borderRadius: "10px",
+                              padding: "2px 8px"
+                            }}
+                          >
+                            {actNombre === "Bicicleta" ? `${cantNum} km` : `${cantNum.toLocaleString("es-AR")} m`}
+                          </span>
+                        )}
+                      </div>
                       {item.observaciones && (
                         <span className="text-muted ms-1" style={{ fontSize: "0.82rem" }}>
                           {item.observaciones}
@@ -883,6 +1163,74 @@ function Entrenamientos() {
             </Form.Select>
             {error && !form.actividad && <Form.Control.Feedback type="invalid" className="small text-center">Seleccioná una actividad</Form.Control.Feedback>}
           </Form.Group>
+
+          {(form.actividad === "Pileta" || form.actividad === "Aguas abiertas") && (
+            <Form.Group className="mb-3 d-flex flex-column align-items-center">
+              <Form.Label className="fw-semibold text-center small mb-1">Metros nadados *</Form.Label>
+              <div className="d-flex align-items-center justify-content-center" style={{ maxWidth: "260px", width: "100%" }}>
+                <Form.Control
+                  size="sm"
+                  type="number"
+                  min="1"
+                  step="25"
+                  placeholder="Ej: 1500"
+                  value={form.cantidad || ""}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, cantidad: e.target.value }));
+                    setError(false);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && agregarEntrenamiento()}
+                  isInvalid={error && (!form.cantidad || Number(String(form.cantidad).replace(",", ".")) <= 0)}
+                  autoFocus
+                  style={{
+                    textAlign: "center",
+                    fontSize: "0.88rem",
+                    borderRadius: "6px"
+                  }}
+                />
+                <span className="ms-2 fw-semibold text-muted small">m</span>
+              </div>
+              {error && (!form.cantidad || Number(String(form.cantidad).replace(",", ".")) <= 0) && (
+                <Form.Control.Feedback type="invalid" className="small text-center d-block">
+                  Ingresá la cantidad de metros nadados
+                </Form.Control.Feedback>
+              )}
+            </Form.Group>
+          )}
+
+          {form.actividad === "Bicicleta" && (
+            <Form.Group className="mb-3 d-flex flex-column align-items-center">
+              <Form.Label className="fw-semibold text-center small mb-1">Kilómetros *</Form.Label>
+              <div className="d-flex align-items-center justify-content-center" style={{ maxWidth: "260px", width: "100%" }}>
+                <Form.Control
+                  size="sm"
+                  type="number"
+                  min="0.1"
+                  step="any"
+                  placeholder="Ej: 30"
+                  value={form.cantidad || ""}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, cantidad: e.target.value }));
+                    setError(false);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && agregarEntrenamiento()}
+                  isInvalid={error && (!form.cantidad || Number(String(form.cantidad).replace(",", ".")) <= 0)}
+                  autoFocus
+                  style={{
+                    textAlign: "center",
+                    fontSize: "0.88rem",
+                    borderRadius: "6px"
+                  }}
+                />
+                <span className="ms-2 fw-semibold text-muted small">km</span>
+              </div>
+              {error && (!form.cantidad || Number(String(form.cantidad).replace(",", ".")) <= 0) && (
+                <Form.Control.Feedback type="invalid" className="small text-center d-block">
+                  Ingresá la cantidad de kilómetros
+                </Form.Control.Feedback>
+              )}
+            </Form.Group>
+          )}
 
           {form.actividad === "Otra" && (
             <Form.Group className="mb-3 d-flex flex-column align-items-center">
