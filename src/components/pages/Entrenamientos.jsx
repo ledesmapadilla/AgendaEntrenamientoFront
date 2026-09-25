@@ -89,6 +89,17 @@ function getSemanasDelMes(año, mes) {
   return semanas;
 }
 
+function getSemanaActualIndex(año, mes) {
+  const hoy = new Date();
+  const semanas = getSemanasDelMes(año, mes);
+  if (año === hoy.getFullYear() && mes === hoy.getMonth()) {
+    const diaHoy = hoy.getDate();
+    const idx = semanas.findIndex((s) => diaHoy >= s.diaInicio && diaHoy <= s.diaFin);
+    return idx !== -1 ? idx : 0;
+  }
+  return 0;
+}
+
 const formVacio = { actividad: "", otraActividad: "", observaciones: "", cantidad: "" };
 
 function Entrenamientos() {
@@ -102,8 +113,19 @@ function Entrenamientos() {
   const [error, setError]             = useState(false);
   const [mostrarPlan, setMostrarPlan] = useState(false);
   const [mostrarResumen, setMostrarResumen] = useState(false);
-  const [tabResumen, setTabResumen]   = useState("mensual");
-  const [semanaIndex, setSemanaIndex] = useState(0);
+  const [tabResumen, setTabResumen]   = useState("semanal");
+  const [semanaIndex, setSemanaIndex] = useState(() => getSemanaActualIndex(hoy.getFullYear(), hoy.getMonth()));
+
+  const abrirResumen = () => {
+    const hoyActual = new Date();
+    const añoActual = hoyActual.getFullYear();
+    const mesActual = hoyActual.getMonth();
+    setAño(añoActual);
+    setMes(mesActual);
+    setTabResumen("semanal");
+    setSemanaIndex(getSemanaActualIndex(añoActual, mesActual));
+    setMostrarResumen(true);
+  };
 
   const [planMetrosSemanal, setPlanMetrosSemanal] = useState(() => {
     return localStorage.getItem("plan_metros_semanal") || "0";
@@ -636,7 +658,7 @@ function Entrenamientos() {
           <i className="bi bi-journal-text me-2"></i>Plan
         </Button>
         <Button
-          onClick={() => setMostrarResumen(true)}
+          onClick={abrirResumen}
           style={{
             backgroundColor: "transparent",
             borderColor: "#2b6cb0",
@@ -819,7 +841,17 @@ function Entrenamientos() {
           
           {/* Solapas Mensual / Semanal */}
           <div className="d-flex justify-content-center mb-3">
-            <Nav variant="tabs" activeKey={tabResumen} onSelect={(k) => setTabResumen(k)} style={{ borderBottom: "2px solid #3a7070" }}>
+            <Nav
+              variant="tabs"
+              activeKey={tabResumen}
+              onSelect={(k) => {
+                setTabResumen(k);
+                if (k === "semanal") {
+                  setSemanaIndex(getSemanaActualIndex(año, mes));
+                }
+              }}
+              style={{ borderBottom: "2px solid #3a7070" }}
+            >
               <Nav.Item>
                 <Nav.Link eventKey="mensual" style={{ fontWeight: "bold", fontSize: "0.92rem", color: tabResumen === "mensual" ? "#3a7070" : "#555" }}>
                   <i className="bi bi-calendar-month me-1"></i>Mensual
@@ -839,7 +871,11 @@ function Entrenamientos() {
                 <div className="d-flex gap-2">
                   <Form.Select
                     value={mes}
-                    onChange={(e) => setMes(Number(e.target.value))}
+                    onChange={(e) => {
+                      const nuevoMes = Number(e.target.value);
+                      setMes(nuevoMes);
+                      setSemanaIndex(getSemanaActualIndex(año, nuevoMes));
+                    }}
                     style={{ maxWidth: "150px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
                     size="sm"
                   >
@@ -849,7 +885,11 @@ function Entrenamientos() {
                   </Form.Select>
                   <Form.Select
                     value={año}
-                    onChange={(e) => setAño(Number(e.target.value))}
+                    onChange={(e) => {
+                      const nuevoAño = Number(e.target.value);
+                      setAño(nuevoAño);
+                      setSemanaIndex(getSemanaActualIndex(nuevoAño, mes));
+                    }}
                     style={{ maxWidth: "100px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
                     size="sm"
                   >
@@ -940,8 +980,9 @@ function Entrenamientos() {
                   <Form.Select
                     value={mes}
                     onChange={(e) => {
-                      setMes(Number(e.target.value));
-                      setSemanaIndex(0);
+                      const nuevoMes = Number(e.target.value);
+                      setMes(nuevoMes);
+                      setSemanaIndex(getSemanaActualIndex(año, nuevoMes));
                     }}
                     style={{ maxWidth: "140px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
                     size="sm"
@@ -953,8 +994,9 @@ function Entrenamientos() {
                   <Form.Select
                     value={año}
                     onChange={(e) => {
-                      setAño(Number(e.target.value));
-                      setSemanaIndex(0);
+                      const nuevoAño = Number(e.target.value);
+                      setAño(nuevoAño);
+                      setSemanaIndex(getSemanaActualIndex(nuevoAño, mes));
                     }}
                     style={{ maxWidth: "90px", borderColor: COLOR, color: COLOR, fontWeight: "bold", cursor: "pointer" }}
                     size="sm"
