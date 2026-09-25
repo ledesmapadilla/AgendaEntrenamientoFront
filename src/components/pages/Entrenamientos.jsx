@@ -578,10 +578,6 @@ function Entrenamientos() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden", flexGrow: 1 }}>
                   {vDia.slice(0, 2).map((v, i) => {
                     const actNombre = v.actividad || v.grupo;
-                    const esBici = actNombre === "Bicicleta";
-                    const esAgua = actNombre === "Pileta" || actNombre === "Aguas abiertas";
-                    const cantNum = Number(v.cantidad) || 0;
-                    const detalleCant = cantNum > 0 ? ` (${cantNum}${esBici ? "km" : (esAgua ? "m" : "")})` : "";
                     return (
                       <div
                         key={i}
@@ -598,7 +594,7 @@ function Entrenamientos() {
                           overflow: "hidden"
                         }}
                       >
-                        {actNombre}{detalleCant}
+                        {actNombre}
                       </div>
                     );
                   })}
