@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Container, Button, Modal, Form, Nav } from "react-bootstrap";
 import Swal from "sweetalert2";
 import ExcelJS from "exceljs";
@@ -111,6 +111,8 @@ function Entrenamientos() {
   const [diaModal, setDiaModal]       = useState(null);
   const [form, setForm]               = useState(formVacio);
   const [error, setError]             = useState(false);
+  const [guardando, setGuardando]     = useState(false);
+  const guardandoRef = useRef(false);
   const [mostrarPlan, setMostrarPlan] = useState(false);
   const [mostrarResumen, setMostrarResumen] = useState(false);
   const [tabResumen, setTabResumen]   = useState("semanal");
@@ -254,6 +256,11 @@ function Entrenamientos() {
       }
     }
 
+    // Evita envíos duplicados (doble clic, Enter + clic) mientras el POST está en curso
+    if (guardandoRef.current) return;
+    guardandoRef.current = true;
+    setGuardando(true);
+
     const key = toKey(año, mes, diaModal);
     try {
       const res = await fetch(URL_ENTRENAMIENTOS, {
@@ -283,6 +290,9 @@ function Entrenamientos() {
       console.error("Error al guardar:", err);
       setError(true);
       Swal.fire({ icon: "error", title: "Error", text: err.message || "No se pudo guardar el entrenamiento" });
+    } finally {
+      guardandoRef.current = false;
+      setGuardando(false);
     }
   };
 
@@ -1317,8 +1327,8 @@ function Entrenamientos() {
         </Modal.Body>
         <Modal.Footer className="justify-content-center gap-2">
           <Button size="sm" variant="secondary" onClick={() => setDiaModal(null)} style={{ padding: "4px 16px" }}>Cerrar</Button>
-          <Button size="sm" onClick={agregarEntrenamiento} style={{ backgroundColor: COLOR, border: "none", color: "#fff", padding: "4px 16px" }}>
-            <i className="bi bi-save me-1"></i>Guardar
+          <Button size="sm" onClick={agregarEntrenamiento} disabled={guardando} style={{ backgroundColor: COLOR, border: "none", color: "#fff", padding: "4px 16px" }}>
+            <i className="bi bi-save me-1"></i>{guardando ? "Guardando..." : "Guardar"}
           </Button>
         </Modal.Footer>
       </Modal>
